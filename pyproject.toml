@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "driveworld"
+version = "0.1.0"
+description = "Modular World Model Framework for Autonomous Driving"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [{name = "Your Name", email = "your@email.com"}]
+keywords = ["autonomous-driving", "world-model", "occupancy-prediction", "diffusion"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "torch>=2.1",
+    "torchvision>=0.16",
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "tensorboard>=2.14",
+    "tqdm>=4.66",
+    "einops>=0.7",
+    "matplotlib>=3.8",
+    "opencv-python>=4.8",
+    "h5py>=3.10",
+    "scipy>=1.11",
+    "nuscenes-devkit>=1.1",
+    "imageio>=2.31",
+    "timm>=0.9",
+    "diffusers>=0.24",
+    "accelerate>=0.25",
+    "hydra-core>=1.3",
+    "omegaconf>=2.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "black>=23.11",
+    "isort>=5.12",
+    "ruff>=0.1",
+    "mypy>=1.7",
+    "pre-commit>=3.6",
+]
+
+[project.scripts]
+driveworld-train = "scripts.train:main"
+driveworld-eval = "scripts.eval:main"
+driveworld-viz = "scripts.visualize:main"
+
+[tool.setuptools.packages.find]
+include = ["driveworld*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=driveworld --cov-report=term-missing"
