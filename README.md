@@ -1,6 +1,6 @@
 <div align="center">
 
-# ?? DriveWorld
+# ğŸš— DriveWorld
 
 **Modular World Model Framework for Autonomous Driving**
 
@@ -12,13 +12,13 @@
 
 *Predicting the future of driving scenes with dual-paradigm world models*
 
-[Quickstart](#-quickstart) ? [Architecture](#-architecture) ? [Models](#-models) ? [Results](#-results) ? [Citation](#-citation)
+[Quickstart](#-quickstart) â€¢ [Architecture](#-architecture) â€¢ [Models](#-models) â€¢ [Results](#-results) â€¢ [Citation](#-citation)
 
 </div>
 
 ---
 
-## ?? Overview
+## ğŸ“– Overview
 
 DriveWorld is a research-oriented, production-ready framework for training and evaluating **world models** in the context of autonomous driving. The core question we tackle:
 
@@ -31,17 +31,17 @@ We implement **two complementary paradigms** in a unified, modular codebase:
 | **OccWorld** | Autoregressive Transformer | Discretizes 3D occupancy into tokens, predicts future tokens causally |
 | **DriveDiffuser** | Conditional Diffusion | Learns to denoise future occupancy grids conditioned on past context |
 
-### ? Highlights
+### âœ¨ Highlights
 
-- **Dual-paradigm comparison** ¡ª Train both OccWorld and DriveDiffuser on the same data, compare tradeoffs
-- **Modular design** ¡ª Pluggable encoders (CNN / Transformer BEV), decoders (single-scale / multi-scale)
-- **Single-GPU friendly** ¡ª Designed for nuScenes mini (4GB), trainable on a single RTX 3090
-- **Rich visualization** ¡ª Side-by-side GT vs prediction GIFs, BEV feature maps, temporal IoU curves
-- **Production-grade engineering** ¡ª Type hints, CI/CD, Docker, pre-commit hooks, 80%+ test coverage
+- **Dual-paradigm comparison** â€” Train both OccWorld and DriveDiffuser on the same data, compare tradeoffs
+- **Modular design** â€” Pluggable encoders (CNN / Transformer BEV), decoders (single-scale / multi-scale)
+- **Single-GPU friendly** â€” Designed for nuScenes mini (4GB), trainable on a single RTX 3090
+- **Rich visualization** â€” Side-by-side GT vs prediction GIFs, BEV feature maps, temporal IoU curves
+- **Production-grade engineering** â€” Type hints, CI/CD, Docker, pre-commit hooks, 80%+ test coverage
 
 ---
 
-## ?? Architecture
+## ğŸ— Architecture
 
 ```mermaid
 graph TB
@@ -87,22 +87,22 @@ graph TB
 ### Data Flow
 
 ```
-Raw nuScenes ¡ú Sliding windows ¡ú (past_images, ego_pose, future_occupancy)
-                                           ©¦
-                              ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©Ø©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´
-                              ¨‹                         ¨‹
+Raw nuScenes â†’ Sliding windows â†’ (past_images, ego_pose, future_occupancy)
+                                           â”‚
+                              â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                              â–¼                         â–¼
                           OccWorld                 DriveDiffuser
                      (token prediction)        (noise prediction)
-                              ©¦                         ©¦
-                              ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©Ğ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼
-                                           ¨‹
+                              â”‚                         â”‚
+                              â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                                           â–¼
                                   3D Occupancy Grids
                                   + Visualization
 ```
 
 ---
 
-## ?? Quickstart
+## ğŸš€ Quickstart
 
 ### Prerequisites
 
@@ -114,7 +114,7 @@ Raw nuScenes ¡ú Sliding windows ¡ú (past_images, ego_pose, future_occupancy)
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/DriveWorld.git
+git clone https://github.com/cenovozz/DriveWorld.git
 cd DriveWorld
 
 # Install with pip
@@ -155,11 +155,7 @@ tensorboard --logdir logs/
 ### Evaluate
 
 ```bash
-python scripts/eval.py \
-    --checkpoint checkpoints/occworld/best.pt \
-    --config configs/occworld.yaml \
-    --output-dir outputs/eval \
-    --num-vis 5
+python scripts/eval.py     --checkpoint checkpoints/occworld/best.pt     --config configs/occworld.yaml     --output-dir outputs/eval     --num-vis 5
 ```
 
 ### Docker
@@ -171,52 +167,52 @@ docker run --gpus all -v $(pwd)/data:/workspace/data driveworld --config configs
 
 ---
 
-## ?? Project Structure
+## ğŸ“‚ Project Structure
 
 ```
 DriveWorld/
-©À©¤©¤ configs/                    # YAML config files for each paradigm
-©¦   ©À©¤©¤ default.yaml
-©¦   ©À©¤©¤ occworld.yaml
-©¦   ©¸©¤©¤ diffusion.yaml
-©À©¤©¤ driveworld/                 # Core package
-©¦   ©À©¤©¤ data/                   # Dataset loading & transforms
-©¦   ©¦   ©À©¤©¤ dataset.py          #   NuScenesWorldModelDataset
-©¦   ©¦   ©À©¤©¤ transforms.py       #   Augmentation pipeline
-©¦   ©¦   ©¸©¤©¤ utils.py            #   DataLoader helpers
-©¦   ©À©¤©¤ models/                 # Model architectures
-©¦   ©¦   ©À©¤©¤ encoder.py          #   BEVEncoder, TransformerBEVEncoder
-©¦   ©¦   ©À©¤©¤ heads.py            #   OccupancyDecoder, MultiScaleDecoder
-©¦   ©¦   ©À©¤©¤ occworld.py         #   OccWorld (autoregressive)
-©¦   ©¦   ©¸©¤©¤ diffusion.py        #   DriveDiffuser (diffusion)
-©¦   ©À©¤©¤ training/               # Training infrastructure
-©¦   ©¦   ©À©¤©¤ trainer.py          #   WorldModelTrainer (AMP, EMA, ckpt)
-©¦   ©¦   ©À©¤©¤ losses.py           #   OccupancyLoss, DiffusionLoss
-©¦   ©¦   ©¸©¤©¤ metrics.py          #   IoU, PSNR, video metrics
-©¦   ©À©¤©¤ eval/                   # Evaluation & visualization
-©¦   ©¦   ©À©¤©¤ evaluator.py        #   WorldModelEvaluator
-©¦   ©¦   ©¸©¤©¤ visualize.py        #   GIF maker, BEV heatmaps, curves
-©¦   ©¸©¤©¤ utils/                  # Configuration & logging
-©¦       ©À©¤©¤ config.py           #   Dataclass config system
-©¦       ©¸©¤©¤ logging.py          #   TensorBoard logger
-©À©¤©¤ scripts/                    # CLI entry points
-©¦   ©À©¤©¤ train.py
-©¦   ©À©¤©¤ eval.py
-©¦   ©¸©¤©¤ visualize.py
-©À©¤©¤ tests/                      # Unit tests
-©¦   ©À©¤©¤ test_data.py
-©¦   ©À©¤©¤ test_models.py
-©¦   ©¸©¤©¤ test_losses.py
-©À©¤©¤ notebooks/                  # Jupyter demos
-©À©¤©¤ .github/workflows/ci.yml    # GitHub Actions CI
-©À©¤©¤ Dockerfile
-©À©¤©¤ .pre-commit-config.yaml
-©¸©¤©¤ pyproject.toml
+â”œâ”€â”€ configs/                    # YAML config files for each paradigm
+â”‚   â”œâ”€â”€ default.yaml
+â”‚   â”œâ”€â”€ occworld.yaml
+â”‚   â””â”€â”€ diffusion.yaml
+â”œâ”€â”€ driveworld/                 # Core package
+â”‚   â”œâ”€â”€ data/                   # Dataset loading & transforms
+â”‚   â”‚   â”œâ”€â”€ dataset.py          #   NuScenesWorldModelDataset
+â”‚   â”‚   â”œâ”€â”€ transforms.py       #   Augmentation pipeline
+â”‚   â”‚   â””â”€â”€ utils.py            #   DataLoader helpers
+â”‚   â”œâ”€â”€ models/                 # Model architectures
+â”‚   â”‚   â”œâ”€â”€ encoder.py          #   BEVEncoder, TransformerBEVEncoder
+â”‚   â”‚   â”œâ”€â”€ heads.py            #   OccupancyDecoder, MultiScaleDecoder
+â”‚   â”‚   â”œâ”€â”€ occworld.py         #   OccWorld (autoregressive)
+â”‚   â”‚   â””â”€â”€ diffusion.py        #   DriveDiffuser (diffusion)
+â”‚   â”œâ”€â”€ training/               # Training infrastructure
+â”‚   â”‚   â”œâ”€â”€ trainer.py          #   WorldModelTrainer (AMP, EMA, ckpt)
+â”‚   â”‚   â”œâ”€â”€ losses.py           #   OccupancyLoss, DiffusionLoss
+â”‚   â”‚   â””â”€â”€ metrics.py          #   IoU, PSNR, video metrics
+â”‚   â”œâ”€â”€ eval/                   # Evaluation & visualization
+â”‚   â”‚   â”œâ”€â”€ evaluator.py        #   WorldModelEvaluator
+â”‚   â”‚   â””â”€â”€ visualize.py        #   GIF maker, BEV heatmaps, curves
+â”‚   â””â”€â”€ utils/                  # Configuration & logging
+â”‚       â”œâ”€â”€ config.py           #   Dataclass config system
+â”‚       â””â”€â”€ logging.py          #   TensorBoard logger
+â”œâ”€â”€ scripts/                    # CLI entry points
+â”‚   â”œâ”€â”€ train.py
+â”‚   â”œâ”€â”€ eval.py
+â”‚   â””â”€â”€ visualize.py
+â”œâ”€â”€ tests/                      # Unit tests
+â”‚   â”œâ”€â”€ test_data.py
+â”‚   â”œâ”€â”€ test_models.py
+â”‚   â””â”€â”€ test_losses.py
+â”œâ”€â”€ notebooks/                  # Jupyter demos
+â”œâ”€â”€ .github/workflows/ci.yml    # GitHub Actions CI
+â”œâ”€â”€ Dockerfile
+â”œâ”€â”€ .pre-commit-config.yaml
+â””â”€â”€ pyproject.toml
 ```
 
 ---
 
-## ?? Models
+## ğŸ§  Models
 
 ### OccWorld
 
@@ -245,12 +241,12 @@ A diffusion-based generative world model:
 | Training speed | Fast (direct loss) | Moderate (noise prediction) |
 | Inference speed | 1 forward pass | 50 DDIM steps |
 | Sample diversity | Deterministic | Stochastic |
-| Long-horizon | ? Autoregressive | ?? Fixed horizon |
+| Long-horizon | âœ… Autoregressive | âš ï¸ Fixed horizon |
 | Memory usage | Higher (transformer) | Lower (UNet) |
 
 ---
 
-## ?? Evaluation Metrics
+## ğŸ“Š Evaluation Metrics
 
 | Metric | Description |
 |--------|-------------|
@@ -261,7 +257,7 @@ A diffusion-based generative world model:
 
 ---
 
-## ?? Example Results
+## ğŸ”¬ Example Results
 
 *Training on nuScenes mini, single RTX 3090, ~2 hours:*
 
@@ -283,7 +279,7 @@ A diffusion-based generative world model:
 
 ---
 
-## ?? Development
+## ğŸ›  Development
 
 ```bash
 # Run tests
@@ -299,19 +295,19 @@ mypy driveworld/
 
 ---
 
-## ?? Roadmap
+## ğŸ¯ Roadmap
 
 - [ ] nuScenes full dataset preprocessing pipeline
 - [ ] Multi-camera support (current: front only)
 - [ ] Streaming / online inference mode
 - [ ] Hybrid OccWorld + Diffusion model
 - [ ] CARLA integration for closed-loop evaluation
-- [ ] Model distillation (teacher ¡ú student)
+- [ ] Model distillation (teacher â†’ student)
 - [ ] Gradio demo app
 
 ---
 
-## ?? Citation
+## ğŸ“ Citation
 
 If you find this project useful, please consider citing:
 
@@ -320,18 +316,18 @@ If you find this project useful, please consider citing:
   author = {Your Name},
   title = {DriveWorld: Modular World Model Framework for Autonomous Driving},
   year = {2024},
-  url = {https://github.com/YOUR_USERNAME/DriveWorld}
+  url = {https://github.com/cenovozz/DriveWorld}
 }
 ```
 
 ---
 
-## ?? License
+## ğŸ“„ License
 
-MIT License ¡ª see [LICENSE](LICENSE) for details.
+MIT License â€” see [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
-  <sub>Built with ?? for autonomous driving research</sub>
+  <sub>Built with â¤ï¸ for autonomous driving research</sub>
 </div>
