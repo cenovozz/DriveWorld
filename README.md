@@ -41,7 +41,7 @@ We implement **two complementary paradigms** in a unified, modular codebase:
 
 ---
 
-## ## Architecture
+## Architecture
 
 ### System Overview
 
@@ -111,7 +111,6 @@ sequenceDiagram
     participant Dec as Decoder
     participant Loss as Loss Function
     participant Out as Output
-
     rect rgb(227, 242, 253)
         Note over Data,Enc: Stage 1 - Perception
         Data->>Enc: Past 3 frames + ego pose
@@ -199,7 +198,7 @@ sequenceDiagram
 |--------|----------|---------------|
 | **Paper** | Zheng et al., ECCV 2024 | Ho et al., NeurIPS 2020 |
 | **Inference** | 1 forward pass | 50 DDIM sampling steps |
-| **Core Math** | P(x_t given x_less_than_t, c) autoregressive | p(x_0) via iterative denoising |
+| **Core Math** | P(x_t | x_less_than_t, c) autoregressive | p(x_0) via iterative denoising |
 | **Training Loss** | CrossEntropy + Dice (occupancy) | MSE (noise prediction) |
 | **Output Type** | Single deterministic future | Multiple stochastic futures |
 | **Long-Horizon** | Native autoregressive rollout | Fixed prediction window |
@@ -209,7 +208,7 @@ sequenceDiagram
 
 ---
 
-🚀 Quickstart
+## 🚀 Quickstart
 
 ### Prerequisites
 
