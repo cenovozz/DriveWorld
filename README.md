@@ -41,68 +41,175 @@ We implement **two complementary paradigms** in a unified, modular codebase:
 
 ---
 
-## 🏗 Architecture
+## ## Architecture
+
+### System Overview
 
 ```mermaid
 graph TB
     subgraph Input["Past Observations (T=3)"]
         IMG["6-Camera Images"]
-        POSE["Ego Pose<br/>(x, y, yaw)"]
+        POSE["Ego Motion (x, y, yaw)"]
     end
-
     subgraph Encoder["Perception Encoder"]
-        BEV["BEV Feature Extractor<br/>ResNet50 + LSS /<br/>BEVFormer-style Transformer"]
+        CNN["ResNet50 Backbone"]
+        DEPTH["Depth Estimation Net"]
+        SPLAT["Lift-Splat-Shoot 2D-to-3D"]
+        BEVF["BEV Features 256x200x200"]
+        CNN --> DEPTH --> SPLAT --> BEVF
     end
-
     subgraph WorldModel["World Model (choose one)"]
-        OCC["OccWorld<br/>Causal Transformer<br/>Autoregressive token prediction"]
-        DIFF["DriveDiffuser<br/>3D UNet<br/>Conditional denoising diffusion"]
+        OCC["OccWorld - Causal Transformer - 6 layers, 8 heads - ~200M params - Fast, Deterministic"]
+        DIFF["DriveDiffuser - 3D UNet + DDIM - 1000 timesteps - ~150M params - Stochastic, Diverse"]
     end
-
     subgraph Decoder["Occupancy Decoder"]
-        DEC["Multi-Scale 3D Decoder<br/>w/ Uncertainty Estimation"]
+        UP["3D Transposed Conv"]
+        MULTI["Multi-Scale Fusion"]
+        UNC["Uncertainty Head"]
+        UP --> MULTI --> UNC
     end
-
     subgraph Output["Future Predictions (T=6)"]
-        OUT["3D Occupancy Grids<br/>(16, 200, 200)<br/>@ 0.5s intervals"]
-        VIZ["GIFs, IoU curves,<br/>BEV heatmaps"]
+        OCC3D["3D Occupancy Grid 16x200x200"]
+        VIZ["GIFs, IoU curves, BEV heatmaps"]
+        OCC3D --> VIZ
     end
-
-    IMG --> BEV
-    POSE --> BEV
-    BEV --> OCC
-    BEV --> DIFF
-    OCC --> DEC
-    DIFF --> DEC
-    DEC --> OUT
-    OUT --> VIZ
-
-    style Input fill:#e1f5fe
-    style Encoder fill:#fff3e0
-    style WorldModel fill:#fce4ec
-    style Decoder fill:#e8f5e9
-    style Output fill:#f3e5f5
+    IMG & POSE --> CNN
+    BEVF --> OCC
+    BEVF --> DIFF
+    OCC & DIFF --> UP
+    UNC --> OCC3D
+    style Input fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style Encoder fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style WorldModel fill:#fce4ec,stroke:#d32f2f,stroke-width:2px
+    style Decoder fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style Output fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
 ```
 
-### Data Flow
+### Encoder: Two Paradigms Compared
+
+```mermaid
+graph LR
+    subgraph LSS["LSS-Style (Philion and Fidler, ECCV 2020)"]
+        direction TB
+        A1["Input Image 3x224x480"] --> A2["ResNet50 Feature Map"] --> A3["DepthNet: 64 bins, 2-50m"] --> A4["Splat to BEV via Frustum Pooling"] --> A5["BEV Feature 256x200x200"]
+    end
+    subgraph BEVF["BEVFormer-Style (Li et al., ECCV 2022)"]
+        direction TB
+        B1["Input Image 3x224x480"] --> B2["Adaptive Pool to 16x32 grid"] --> B3["Learnable BEV Queries"] --> B4["Cross-Attention Transformer x3 layers"] --> B5["BEV Feature 256x200x200"]
+    end
+    style LSS fill:#e8eaf6,stroke:#3949ab
+    style BEVF fill:#e0f2f1,stroke:#00897b
+```
+
+### Training and Inference Sequence
+
+```mermaid
+sequenceDiagram
+    participant Data as nuScenes Dataset
+    participant Enc as Encoder
+    participant WM as World Model
+    participant Dec as Decoder
+    participant Loss as Loss Function
+    participant Out as Output
+
+    rect rgb(227, 242, 253)
+        Note over Data,Enc: Stage 1 - Perception
+        Data->>Enc: Past 3 frames + ego pose
+        Enc->>WM: BEV features + motion encoding
+    end
+    rect rgb(252, 228, 236)
+        Note over WM,Loss: Stage 2 - World Modeling
+        alt OccWorld (Training)
+            WM->>WM: Autoregressive token prediction
+            WM->>Dec: Predicted tokens x T_future
+            Dec->>Out: 3D occupancy logits
+            Out->>Loss: CE + Dice Loss
+        else DriveDiffuser (Training)
+            WM->>WM: Add noise to GT + UNet predicts noise
+            WM->>Loss: MSE Loss (noise prediction)
+        end
+    end
+    rect rgb(232, 245, 233)
+        Note over Loss,Out: Stage 3 - Optimization
+        Loss->>Loss: Backward + AMP + Gradient Clip
+    end
+    rect rgb(243, 229, 245)
+        Note over Out: Stage 4 - Inference
+        WM->>Dec: Generate future states
+        Dec->>Out: 3D Occupancy x 6 timesteps
+        Out->>Out: GIF comparison + IoU metrics
+    end
+```
+
+### Data Flow: nuScenes to Prediction
 
 ```
-Raw nuScenes → Sliding windows → (past_images, ego_pose, future_occupancy)
-                                           │
-                              ┌────────────┴────────────┐
-                              ▼                         ▼
-                          OccWorld                 DriveDiffuser
-                     (token prediction)        (noise prediction)
-                              │                         │
-                              └────────────┬────────────┘
-                                           ▼
-                                  3D Occupancy Grids
-                                  + Visualization
+  nuScenes Dataset (mini: 4GB, 1000 scenes)
+  |
+  |  Sliding Window (stride=2, interval=0.5s)
+  v
+  +------------------+       +---------------------------+
+  | Past Window (T=3)|       | Future Window (T=6)       |
+  |                  |       |                           |
+  | t-1.5 t-1.0 t-0.5|       | t+0.5 t+1.0 t+1.5 ... +3.0s|
+  |   |     |     |   |       |   |     |     |        |   |
+  |   v     v     v   |       |   v     v     v        v   |
+  | [img][img][img]   |       | [occ][occ][occ] ... [occ]  |
+  |                   |       |                           |
+  | Input: images     |       | Ground Truth: 3D occupancy|
+  | + ego poses       |       | (16x200x200 binary voxels)|
+  +--------+----------+       +---------------------------+
+           |
+     +-----+------+
+     |            |
+     v            v
+  +-------+   +-----------+
+  |OccWorld|   |DriveDiffuser|
+  |        |   |           |
+  |Tokenize|   |Add noise  |
+  |BEV to  |   |to GT,     |
+  |tokens, |   |UNet predict|
+  |Causal  |   |noise,     |
+  |Transf. |   |DDIM sample|
+  |~200M   |   |~150M params|
+  +---+----+   +-----+-----+
+      |              |
+      +------+-------+
+             |
+             v
+  +----------------------------------+
+  | Multi-Scale Occupancy Decoder    |
+  | BEV - 3D Upsampling -            |
+  | Predicted Occupancy x 6 frames   |
+  | + Uncertainty Map                |
+  +----------------------------------+
+             |
+      +------+-------+
+      |              |
+      v              v
+  +--------+   +-----------+
+  |IoU/PSNR|   |GIF Comparison|
+  |Metrics |   |BEV Heatmaps |
+  +--------+   +-----------+
 ```
+
+### Quick Comparison: OccWorld vs DriveDiffuser
+
+| Aspect | OccWorld | DriveDiffuser |
+|--------|----------|---------------|
+| **Paper** | Zheng et al., ECCV 2024 | Ho et al., NeurIPS 2020 |
+| **Inference** | 1 forward pass | 50 DDIM sampling steps |
+| **Core Math** | P(x_t given x_less_than_t, c) autoregressive | p(x_0) via iterative denoising |
+| **Training Loss** | CrossEntropy + Dice (occupancy) | MSE (noise prediction) |
+| **Output Type** | Single deterministic future | Multiple stochastic futures |
+| **Long-Horizon** | Native autoregressive rollout | Fixed prediction window |
+| **Uncertainty** | Not modeled | Sample variance across runs |
+| **Best Use Case** | Real-time planning | Safety-critical analysis |
+
 
 ---
 
-## 🚀 Quickstart
+🚀 Quickstart
 
 ### Prerequisites
 
