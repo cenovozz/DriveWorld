@@ -140,14 +140,7 @@ sequenceDiagram
     end
 ```
 
-### Data Flow: nuScenes to Prediction
-
-```
-  nuScenes Dataset (mini: 4GB, 1000 scenes)
-  |
-  |  Sliding Window (stride=2, interval=0.5s)
-  v
-  +------------------+       +---------------------------+
+------------------+       +---------------------------+
   | Past Window (T=3)|       | Future Window (T=6)       |
   |                  |       |                           |
   | t-1.5 t-1.0 t-0.5|       | t+0.5 t+1.0 t+1.5 ... +3.0s|
