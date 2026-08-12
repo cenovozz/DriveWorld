@@ -139,52 +139,7 @@ sequenceDiagram
         Out->>Out: GIF comparison + IoU metrics
     end
 ```
-
-------------------+       +---------------------------+
-  | Past Window (T=3)|       | Future Window (T=6)       |
-  |                  |       |                           |
-  | t-1.5 t-1.0 t-0.5|       | t+0.5 t+1.0 t+1.5 ... +3.0s|
-  |   |     |     |   |       |   |     |     |        |   |
-  |   v     v     v   |       |   v     v     v        v   |
-  | [img][img][img]   |       | [occ][occ][occ] ... [occ]  |
-  |                   |       |                           |
-  | Input: images     |       | Ground Truth: 3D occupancy|
-  | + ego poses       |       | (16x200x200 binary voxels)|
-  +--------+----------+       +---------------------------+
-           |
-     +-----+------+
-     |            |
-     v            v
-  +-------+   +-----------+
-  |OccWorld|   |DriveDiffuser|
-  |        |   |           |
-  |Tokenize|   |Add noise  |
-  |BEV to  |   |to GT,     |
-  |tokens, |   |UNet predict|
-  |Causal  |   |noise,     |
-  |Transf. |   |DDIM sample|
-  |~200M   |   |~150M params|
-  +---+----+   +-----+-----+
-      |              |
-      +------+-------+
-             |
-             v
-  +----------------------------------+
-  | Multi-Scale Occupancy Decoder    |
-  | BEV - 3D Upsampling -            |
-  | Predicted Occupancy x 6 frames   |
-  | + Uncertainty Map                |
-  +----------------------------------+
-             |
-      +------+-------+
-      |              |
-      v              v
-  +--------+   +-----------+
-  |IoU/PSNR|   |GIF Comparison|
-  |Metrics |   |BEV Heatmaps |
-  +--------+   +-----------+
-```
-
+
 ---
 
 ## Quickstart
