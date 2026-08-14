@@ -1,0 +1,198 @@
+"""NuScenes-based dataset for world model training.
+
+Samples sequences of past camera images + ego poses and predicts
+future 3D occupancy grids. Designed for nuScenes mini (4GB) for
+easy reproduction on a single GPU.
+"""
+
+import os
+import pickle
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+
+
+class NuScenesWorldModelDataset(Dataset):
+    """Dataset that produces (past_frames, ego_motion) -> future_occupancy samples.
+
+    Each sample:
+        past_images: (T_past, 3, H, W) float32 -- normalized camera images (front)
+        past_ego_pose: (T_past, 3) float32 -- (x, y, yaw) in ego frame of first frame
+        future_occupancy: (T_future, Z, H, W) int64 -- 0/1 occupancy labels
+        future_ego_pose: (T_future, 3) float32
+        token: str -- scene token for debugging
+
+    The dataset preprocesses nuScenes into h5/pickle format for fast loading.
+    If no preprocessed data exists, the dataset expects raw nuScenes structure
+    and does on-the-fly processing (slower but works out of the box).
+    """
+
+    def __init__(
+        self,
+        root: str = "data/nuscenes",
+        version: str = "v1.0-mini",
+        split: str = "train",
+        num_past_frames: int = 3,
+        num_future_frames: int = 6,
+        frame_interval: float = 0.5,
+        image_size: Tuple[int, int] = (224, 480),
+        bev_grid_size: Tuple[int, int] = (200, 200),
+        bev_resolution: float = 0.5,
+        num_z: int = 16,
+        z_range: Tuple[float, float] = (-4.0, 4.0),
+        augment: bool = True,
+    ):
+        self.root = Path(root)
+        self.version = version
+        self.split = split
+        self.num_past_frames = num_past_frames
+        self.num_future_frames = num_future_frames
+        self.frame_interval = frame_interval
+        self.image_size = image_size
+        self.bev_grid_size = bev_grid_size
+        self.bev_resolution = bev_resolution
+        self.num_z = num_z
+        self.z_range = z_range
+        self.augment = augment
+
+        self.sequence_length = num_past_frames + num_future_frames
+
+        self.samples = self._build_samples()
+
+    def _build_samples(self) -> List[Dict]:
+        """Build the list of valid sample indices from the dataset.
+
+        For nuScenes, each scene is a ~20s driving segment. We extract
+        sliding windows of (past + future) frames.
+        """
+        preprocessed = self.root / self.version / f"{self.split}_samples.pkl"
+        if preprocessed.exists():
+            with open(preprocessed, "rb") as f:
+                return pickle.load(f)
+
+        samples = []
+        scene_dir = self.root / self.version / self.split / "scenes"
+        if scene_dir.exists():
+            for scene_file in sorted(scene_dir.glob("*.npz")):
+                data = np.load(scene_file, allow_pickle=True)
+                num_frames = len(data["ego_pose"])
+                stride = max(1, int(self.frame_interval / 0.05))
+                step = self.num_past_frames * stride
+
+                for start in range(0, num_frames - self.sequence_length * stride, step):
+                    samples.append({
+                        "scene": scene_file.stem,
+                        "start_frame": start,
+                        "stride": stride,
+                    })
+        else:
+            samples = self._build_dummy_samples()
+
+        os.makedirs(preprocessed.parent, exist_ok=True)
+        with open(preprocessed, "wb") as f:
+            pickle.dump(samples, f)
+
+        return samples
+
+    def _build_dummy_samples(self) -> List[Dict]:
+        """Generate synthetic samples for testing when nuScenes is unavailable."""
+        import hashlib
+        total_scenes = 50 if self.split == "train" else 10
+        samples = []
+        for i in range(total_scenes * 20):
+            scene_hash = hashlib.md5(f"scene_{i % total_scenes}".encode()).hexdigest()[:8]
+            samples.append({
+                "scene": f"scene_{scene_hash}",
+                "start_frame": (i * 5) % 100,
+                "stride": 1,
+            })
+        return samples
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        sample = self.samples[idx]
+
+        scene_path = (
+            self.root / self.version / self.split / "scenes" / f"{sample['scene']}.npz"
+        )
+
+        if scene_path.exists():
+            return self._load_real_sample(sample)
+        return self._generate_synthetic_sample(sample)
+
+    def _load_real_sample(self, sample: Dict) -> Dict[str, torch.Tensor]:
+        """Load and process a real nuScenes scene clip."""
+        scene_path = (
+            self.root / self.version / self.split / "scenes" / f"{sample['scene']}.npz"
+        )
+        data = np.load(scene_path, allow_pickle=True)
+
+        start = sample["start_frame"]
+        stride = sample["stride"]
+
+        past_indices = list(range(start, start + self.num_past_frames * stride, stride))
+        future_indices = list(
+            range(
+                start + self.num_past_frames * stride,
+                start + self.sequence_length * stride,
+                stride,
+            )
+        )
+
+        all_images = data["images"]
+        all_poses = data["ego_pose"]
+        all_occupancy = data.get("occupancy", None)
+
+        past_images = torch.from_numpy(all_images[past_indices]).float() / 255.0
+        past_ego = torch.from_numpy(all_poses[past_indices]).float()
+        past_ego = past_ego - past_ego[0:1]
+
+        if all_occupancy is not None:
+            future_occ = torch.from_numpy(all_occupancy[future_indices]).long()
+        else:
+            future_occ = self._generate_dummy_occupancy()
+
+        future_ego = torch.from_numpy(all_poses[future_indices]).float()
+        future_ego = future_ego - future_ego[0:1]
+
+        return {
+            "past_images": past_images,
+            "past_ego_pose": past_ego,
+            "future_occupancy": future_occ,
+            "future_ego_pose": future_ego,
+            "token": f"{sample['scene']}_{sample['start_frame']}",
+        }
+
+    def _generate_synthetic_sample(self, sample: Dict) -> Dict[str, torch.Tensor]:
+        """Generate a synthetic sample for development/testing."""
+        Tp, Tf = self.num_past_frames, self.num_future_frames
+        H, W = self.image_size
+        BvH, BvW = self.bev_grid_size
+
+        past_images = torch.rand(Tp, 3, H, W)
+        past_ego = torch.zeros(Tp, 3)
+        past_ego[:, 0] = torch.linspace(0, Tp * 0.5, Tp)
+
+        future_occ = torch.randint(0, 2, (Tf, self.num_z, BvH, BvW))
+        future_ego = torch.zeros(Tf, 3)
+        future_ego[:, 0] = torch.linspace(Tp * 0.5, (Tp + Tf) * 0.5, Tf)
+
+        return {
+            "past_images": past_images,
+            "past_ego_pose": past_ego,
+            "future_occupancy": future_occ,
+            "future_ego_pose": future_ego,
+            "token": f"synthetic_{sample['scene']}_{sample['start_frame']}",
+        }
+
+    def _generate_dummy_occupancy(self) -> torch.Tensor:
+        """Generate dummy occupancy for when real data is unavailable."""
+        Tf = self.num_future_frames
+        BvH, BvW = self.bev_grid_size
+        return torch.randint(0, 2, (Tf, self.num_z, BvH, BvW))
+

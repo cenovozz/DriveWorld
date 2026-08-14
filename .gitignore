@@ -22,7 +22,7 @@ env/
 .ipynb_checkpoints/
 
 # Data
-data/
+/data/
 datasets/
 *.pth
 *.pt
