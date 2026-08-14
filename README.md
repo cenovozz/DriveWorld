@@ -186,6 +186,33 @@ python scripts/eval.py --checkpoint checkpoints/occworld/best.pt \
   --config configs/occworld.yaml --output-dir outputs/eval
 ```
 
+### DriveDiffuser (nuScenes mini)
+
+Diffusion-based world model from the same nuScenes mini setup. The checkpoint and
+visualizations are from the training run recorded in `logs/diffusion/`.
+
+| Setting | Value |
+|--------|-------|
+| **Model** | DriveDiffuser (DDPM-style diffusion world model) |
+| **Dataset** | nuScenes mini: 110 train / 99 val scenes |
+| **Task** | 3 past frames + ego pose -> 6 future occupancy frames |
+| **Diffusion** | 1000 cosine-schedule timesteps, UNet `[128, 256, 512]` |
+| **Training** | 1x GPU, 150 epochs |
+| **train/loss_epoch** | 0.091 (epoch 149) |
+| **best val/loss** | 0.089 (epoch 136) |
+| **last val/loss** | 0.108 (epoch 149) |
+
+Ground-truth vs. predicted BEV occupancy on the val split:
+
+![DriveDiffuser results](assets/diffusion_results.png)
+
+Reproduce:
+
+```bash
+python scripts/eval.py --checkpoint checkpoints/diffusion/best.pt \
+  --config configs/diffusion.yaml --output-dir outputs/eval_diffusion
+```
+
 ---
 
 ## Roadmap
