@@ -26,19 +26,18 @@ Two paradigms share the same data pipeline and training loop:
 | Paradigm | Approach | Key Idea |
 |----------|----------|----------|
 | **OccWorld** | Autoregressive Transformer | Predict future occupancy from compact BEV + motion tokens |
-| **DriveDiffuser** | Conditional Diffusion | Denoise future occupancy grids iteratively (experimental) |
+| **DriveDiffuser** | Conditional Diffusion | Denoise future occupancy grids iteratively |
 
 ### Highlights
 
 - Unified nuScenes pipeline: raw sensor data -> compact `.npz` -> sliding windows
 - Lightweight, single-GPU-friendly implementation (nuScenes mini, ~4 GB)
-- OccWorld v1 is end-to-end trainable and validated forward/backward
+- OccWorld and DriveDiffuser are both end-to-end trainable and validated forward/backward
 - Config-driven design (YAML + dataclasses) with AMP, checkpointing, and TensorBoard
 - Evaluation metrics: mIoU, Dice, PSNR, per-timestep IoU
 
-> Current status: OccWorld is the stable v1 path. DriveDiffuser and the full
-> BEVFormer/LSS encoders are present as research scaffolds but are still under
-> development.
+> Current status: OccWorld and DriveDiffuser are the two trainable paths.
+> The full BEVFormer/LSS encoder variants are kept as research scaffolds.
 
 ---
 
@@ -106,11 +105,20 @@ Pipeline:
 - **Parameters**: ~36M (validated)
 - **Loss**: cross-entropy + soft Dice
 
-### DriveDiffuser (experimental)
+### DriveDiffuser
 
-A 3D-UNet conditional diffusion path is implemented in
-`driveworld/models/diffusion.py`. It is kept for research extension but has not
-been validated end-to-end in v1; use `configs/diffusion.yaml` at your own risk.
+Generates future occupancy through conditional denoising:
+
+1. **Representation**: future occupancy `(T_future, Z, H, W)` is flattened into
+   `T_future * Z` channels and denoised as a 2D map.
+2. **Backbone**: 2D UNet with FiLM conditioning and bottleneck attention.
+3. **Conditioning**: past BEV features (spatial map) + ego motion (global vector).
+4. **Sampling**: DDIM with 50 steps (configurable).
+
+- **Input**: past images + ego pose + future ego trajectory
+- **Output**: `(T_future, num_z, 200, 200)` occupancy in `[0, 1]`
+- **Parameters**: ~49M (validated)
+- **Loss**: MSE on predicted noise
 
 ### Encoders
 
@@ -124,18 +132,18 @@ been validated end-to-end in v1; use `configs/diffusion.yaml` at your own risk.
 
 ```
 DriveWorld/
-├── configs/                 # YAML configs (occworld / diffusion / default)
-├── driveworld/
-│   ├── data/                # nuScenes dataset, transforms, dataloader
-│   ├── models/              # encoder, heads, OccWorld, DriveDiffuser
-│   ├── training/            # trainer, losses, metrics
-│   ├── eval/                # evaluator and visualization
-│   └── utils/               # config and logging
-├── scripts/                 # train / eval / visualize / preprocess CLIs
-├── tests/                   # unit tests
-├── docs/                    # deployment and roadmap notes
-├── Dockerfile
-└── pyproject.toml
+|-- configs/                 # YAML configs (occworld / diffusion / default)
+|-- driveworld/
+|   |-- data/                # nuScenes dataset, transforms, dataloader
+|   |-- models/              # encoder, heads, OccWorld, DriveDiffuser
+|   |-- training/            # trainer, losses, metrics
+|   |-- eval/                # evaluator and visualization
+|   `-- utils/               # config and logging
+|-- scripts/                 # train / eval / visualize / preprocess CLIs
+|-- tests/                   # unit tests
+|-- docs/                    # deployment and roadmap notes
+|-- Dockerfile
+`-- pyproject.toml
 ```
 
 ---
@@ -162,7 +170,7 @@ python scripts/eval.py --checkpoint checkpoints/occworld/best.pt \
 
 - [ ] Full nuScenes trainval preprocessing
 - [ ] Multi-camera support (current: front camera only)
-- [ ] Stabilize and validate the DriveDiffuser path
+- [ ] Add classifier-free guidance for DriveDiffuser
 - [ ] Hybrid OccWorld + Diffusion model
 - [ ] Closed-loop evaluation in CARLA
 - [ ] Gradio demo app

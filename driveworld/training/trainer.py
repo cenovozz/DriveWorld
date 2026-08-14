@@ -103,10 +103,13 @@ class WorldModelTrainer:
                 dropout=self.config.occworld.dropout,
             )
         elif paradigm == "diffusion":
-            from driveworld.models.diffusion import UNet3D, DriveDiffuser as Model
-            unet = UNet3D(
-                in_channels=16,
-                out_channels=16,
+            from driveworld.models.diffusion import UNet2D, DriveDiffuser as Model
+            num_z = 16
+            num_future = self.config.data.num_future_frames
+            unet = UNet2D(
+                in_channels=num_future * num_z,
+                out_channels=num_future * num_z,
+                cond_channels=64,
                 base_channels=self.config.diffusion.unet_channels[0],
                 channel_mult=(1, 2, 4),
                 num_res_blocks=self.config.diffusion.num_res_blocks,
@@ -117,7 +120,10 @@ class WorldModelTrainer:
                 unet=unet,
                 num_timesteps=self.config.diffusion.num_timesteps,
                 beta_schedule=self.config.diffusion.beta_schedule,
+                num_future_frames=num_future,
+                num_z=num_z,
             )
+        
         else:
             raise ValueError(f"Unknown paradigm: {paradigm}")
 
