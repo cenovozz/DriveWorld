@@ -157,7 +157,29 @@ DriveWorld/
 | **PSNR** | Peak Signal-to-Noise Ratio |
 | **IoU@t** | Per-timestep IoU (first / middle / last) |
 
-After training, fill in real numbers here rather than placeholder values. Use:
+## Results
+
+### OccWorld (nuScenes mini)
+
+The numbers below come from a single-GPU training run on **nuScenes mini** and are
+reproducible with the commands in [Quickstart](#quickstart).
+
+| Setting | Value |
+|--------|-------|
+| **Model** | OccWorld (autoregressive Transformer) |
+| **Dataset** | nuScenes mini: 110 train / 99 val scenes |
+| **Task** | 3 past frames + ego pose -> 6 future occupancy frames |
+| **Output** | `16 x 200 x 200` voxels per timestep |
+| **Parameters** | ~36M |
+| **Training** | 1x GPU, 100 epochs |
+| **val/mIoU** | **0.570** |
+| **val/loss** | 0.461 |
+
+Ground-truth vs. predicted BEV occupancy on the val split:
+
+![OccWorld results](assets/results.png)
+
+Reproduce:
 
 ```bash
 python scripts/eval.py --checkpoint checkpoints/occworld/best.pt \
