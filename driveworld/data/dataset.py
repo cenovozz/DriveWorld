@@ -73,23 +73,26 @@ class NuScenesWorldModelDataset(Dataset):
             with open(preprocessed, "rb") as f:
                 return pickle.load(f)
 
-        samples = []
         scene_dir = self.root / self.version / self.split / "scenes"
-        if scene_dir.exists():
-            for scene_file in sorted(scene_dir.glob("*.npz")):
-                data = np.load(scene_file, allow_pickle=True)
-                num_frames = len(data["ego_pose"])
-                stride = max(1, int(self.frame_interval / 0.05))
-                step = self.num_past_frames * stride
+        if not scene_dir.exists():
+            return self._build_dummy_samples()
 
-                for start in range(0, num_frames - self.sequence_length * stride, step):
-                    samples.append({
-                        "scene": scene_file.stem,
-                        "start_frame": start,
-                        "stride": stride,
-                    })
-        else:
-            samples = self._build_dummy_samples()
+        samples = []
+        for scene_file in sorted(scene_dir.glob("*.npz")):
+            data = np.load(scene_file, allow_pickle=True)
+            num_frames = len(data["ego_pose"])
+            stride = max(1, round(self.frame_interval / 0.5))
+            step = self.num_past_frames * stride
+
+            for start in range(0, num_frames - self.sequence_length * stride + 1, step):
+                samples.append({
+                    "scene": scene_file.stem,
+                    "start_frame": start,
+                    "stride": stride,
+                })
+
+        if not samples:
+            print(f"Warning: no valid {self.split} windows found under {scene_dir}")
 
         os.makedirs(preprocessed.parent, exist_ok=True)
         with open(preprocessed, "wb") as f:

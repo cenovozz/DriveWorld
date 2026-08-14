@@ -16,6 +16,9 @@ def create_dataloader(
     collate_fn: Optional[callable] = None,
 ) -> DataLoader:
     """Create a DataLoader with sensible defaults for world model training."""
+    if collate_fn is None:
+        collate_fn = collate_world_model
+
     return DataLoader(
         dataset,
         batch_size=batch_size,

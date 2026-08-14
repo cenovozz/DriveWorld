@@ -11,7 +11,6 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange, repeat
 
 
 class BEVEncoder(nn.Module):
@@ -187,18 +186,52 @@ class TransformerBEVEncoder(nn.Module):
         return bev_feat
 
 
-def build_encoder(config) -> nn.Module:
-    """Factory function to build the appropriate encoder."""
-    if config.encoder.fusion_method == "transformer":
-        return TransformerBEVEncoder(
-            bev_h=config.data.bev_grid_size[0],
-            bev_w=config.data.bev_grid_size[1],
-            bev_feat_dim=config.encoder.bev_feat_dim,
+
+class ConvBEVEncoder(nn.Module):
+    """Lightweight image-to-BEV encoder for the world model.
+
+    Encodes each past camera frame with a compact conv stem, then pools
+    temporally into a low-resolution BEV feature map. The compact grid keeps
+    the downstream transformer tractable; the occupancy decoder upsamples
+    back to the full BEV resolution.
+    """
+
+    def __init__(self, bev_h: int = 16, bev_w: int = 16, bev_feat_dim: int = 128):
+        super().__init__()
+        self.bev_h = bev_h
+        self.bev_w = bev_w
+        self.bev_feat_dim = bev_feat_dim
+
+        self.stem = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, bev_feat_dim, kernel_size=1),
         )
-    return BEVEncoder(
-        backbone=config.encoder.backbone,
-        pretrained=config.encoder.pretrained,
+
+    def forward(
+        self, images: torch.Tensor, ego_pose: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        B, T, C, H_img, W_img = images.shape
+        x = images.view(B * T, C, H_img, W_img)
+        x = self.stem(x)
+        x = F.adaptive_avg_pool2d(x, (self.bev_h, self.bev_w))
+        x = x.view(B, T, self.bev_feat_dim, self.bev_h, self.bev_w)
+        return x.mean(dim=1)
+
+
+
+
+def build_encoder(config) -> nn.Module:
+    """Factory function to build the perception encoder."""
+    return ConvBEVEncoder(
+        bev_h=config.encoder.bev_h,
+        bev_w=config.encoder.bev_w,
         bev_feat_dim=config.encoder.bev_feat_dim,
-        bev_h=config.data.bev_grid_size[0],
-        bev_w=config.data.bev_grid_size[1],
     )

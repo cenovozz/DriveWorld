@@ -18,10 +18,10 @@ data:
 encoder:
   backbone: "resnet50"
   pretrained: true
-  bev_feat_dim: 256
-  bev_h: 200
-  bev_w: 200
-  fusion_method: "transformer"
+  bev_feat_dim: 128
+  bev_h: 16
+  bev_w: 16
+  fusion_method: "cnn"
 
 occworld:
   hidden_dim: 512

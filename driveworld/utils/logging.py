@@ -1,26 +1,49 @@
-"""Structured logging utility with TensorBoard integration."""
+"""Structured logging utility with optional TensorBoard integration."""
 
 import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from torch.utils.tensorboard import SummaryWriter
+
+class _DummyWriter:
+    """No-op writer used when TensorBoard is unavailable."""
+
+    def add_scalar(self, *args, **kwargs):
+        pass
+
+    def add_scalars(self, *args, **kwargs):
+        pass
+
+    def add_image(self, *args, **kwargs):
+        pass
+
+    def add_images(self, *args, **kwargs):
+        pass
+
+    def close(self):
+        pass
 
 
 class Logger:
-    """Unified logger with console + TensorBoard output."""
+    """Unified logger with console + optional TensorBoard output."""
 
     def __init__(self, log_dir: str, name: str = "driveworld"):
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_dir = self.log_dir / f"{name}_{timestamp}"
-        run_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            from torch.utils.tensorboard import SummaryWriter
+        except Exception:
+            SummaryWriter = None
 
-        self.writer = SummaryWriter(log_dir=str(run_dir))
+        if SummaryWriter is None:
+            self.writer = _DummyWriter()
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            run_dir = self.log_dir / f"{name}_{timestamp}"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            self.writer = SummaryWriter(log_dir=str(run_dir))
 
         self.logger = logging.getLogger(name)
         self.logger.setLevel(logging.INFO)

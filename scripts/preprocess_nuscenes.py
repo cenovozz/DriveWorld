@@ -1,4 +1,4 @@
-﻿"""将 nuScenes 原始数据预处理为模型训练用的 .npz 格式。
+"""将 nuScenes 原始数据预处理为模型训练用的 .npz 格式。
 
 输入: data/nuscenes/v1.0-mini/ 原始 nuScenes 目录
 输出: data/nuscenes/v1.0-mini/train/scenes/*.npz  (每个 scene 一个文件)
@@ -227,9 +227,9 @@ def main():
     print(f"Processing {len(scenes)} scenes...")
     total_frames = 0
 
-    for scene in tqdm(scenes, desc="Scenes"):
-        # 简单划分 train/val: 前几个 scene 作 val
-        split = 'val' if scene['name'].startswith('scene-0') else 'train'
+    num_val_scenes = max(1, len(scenes) // 5)
+    for idx, scene in enumerate(tqdm(scenes, desc="Scenes")):
+        split = "val" if idx >= len(scenes) - num_val_scenes else "train"
         frames = process_scene(nusc, scene, split, dataroot)
         total_frames += frames
 

@@ -15,7 +15,6 @@ from typing import Dict, List, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
 
 
 def get_timestep_embedding(timesteps: torch.Tensor, embedding_dim: int) -> torch.Tensor:

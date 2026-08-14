@@ -21,7 +21,7 @@ class SoftDiceLoss(nn.Module):
         self.smooth = smooth
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        pred = F.softmax(pred, dim=2)[:, :, 1]
+        pred = F.softmax(pred, dim=1)[:, 1]
         target = target.float()
 
         if target.dim() == pred.dim() + 1 and target.shape[2] == 2:

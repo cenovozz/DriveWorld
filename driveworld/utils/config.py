@@ -32,10 +32,10 @@ class EncoderConfig:
     """Perception encoder configuration."""
     backbone: str = "resnet50"
     pretrained: bool = True
-    bev_feat_dim: int = 256
-    bev_h: int = 200
-    bev_w: int = 200
-    fusion_method: str = "transformer"  # transformer, concat, add
+    bev_feat_dim: int = 128
+    bev_h: int = 16
+    bev_w: int = 16
+    fusion_method: str = "cnn"  # transformer, concat, add
 
 
 @dataclass
