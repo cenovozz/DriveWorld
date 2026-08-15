@@ -188,11 +188,20 @@ class NuScenesWorldModelDataset(Dataset):
         if images.ndim == 4:
             if self.num_cameras == 1:
                 return torch.from_numpy(images).float() / 255.0
-            raise ValueError(
-                "Multi-camera config requires re-running "
-                "scripts/preprocess_nuscenes.py to generate "
-                "(N, C, 3, H, W) image arrays."
+
+            # Some old single-camera .npz files can remain in the cache.
+            # Repeat the front view so a multi-camera config can still run,
+            # but warn that this is not real 360-degree data.
+            import warnings
+            warnings.warn(
+                "Found a legacy single-camera .npz file while "
+                "num_cameras>1; duplicating the front view. Re-run "
+                "scripts/preprocess_nuscenes.py before reporting metrics."
             )
+            images = np.repeat(
+                images[:, None, ...], self.num_cameras, axis=1
+            )
+            return torch.from_numpy(images).float() / 255.0
 
         raise ValueError(
             f"Unexpected image array shape {images.shape}; "
