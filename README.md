@@ -215,27 +215,29 @@ python scripts/eval.py --checkpoint checkpoints/diffusion/best.pt \
 
 ### Stage 2 Multi-camera OccWorld (nuScenes mini)
 
-Results from the tracked run `occworld_multicam_tpast3_20260815` on AutoDL.
+Tracked on AutoDL, 100 epochs, seed 42. Both runs use Focal + Dice + temporal weighting.
 
-| Setting | Value |
-|--------|-------|
-| **Model** | OccWorld + 6-camera shared ConvBEV encoder (`mean` fusion) |
-| **Dataset** | nuScenes mini: 110 train / 99 val scenes |
-| **Task** | 3 past frames + ego pose -> 6 future occupancy frames |
-| **Training** | 1x GPU, 100 epochs, batch size 2, seed 42 |
-| **Loss** | Focal + Dice + temporal weighting |
-| **train/loss_epoch** | 0.389 (epoch 99) |
-| **last val/loss** | 0.408 |
-| **last val/mIoU** | 0.561 |
-| **best val/mIoU** | 0.563 |
+| Setting | Single-camera baseline | 6-camera multi-camera |
+|--------|-------|-------|
+| **Experiment** | `occworld_baseline_tpast3_20260815_v2` | `occworld_multicam_tpast3_20260815` |
+| **Input** | `CAM_FRONT` only | 6 cameras, ConvBEV `mean` fusion |
+| **Batch size** | 4 | 2 |
+| **val/mIoU** | 0.5613 | 0.5607 |
+| **occupied IoU** | 0.1347 | 0.1320 |
+| **IoU avg** | 0.1347 | 0.1320 |
+| **PSNR** | 19.164 | 19.734 |
+| **MSE** | 0.01213 | 0.01065 |
+| **IoU@t0** | 0.1326 | 0.1298 |
+| **IoU@tmid** | 0.1343 | 0.1303 |
+| **IoU@tfinal** | 0.1375 | 0.1355 |
+
+The current `mean` fusion reaches comparable mIoU to the single-camera baseline and improves PSNR/MSE. The LSS projection path is the next upgrade.
 
 Reproduce:
 
 ```bash
-python scripts/run_experiment.py \
-  --config configs/multicam_occworld.yaml \
-  --name occworld_multicam_tpast3_20260815 \
-  --seed 42 --eval
+python scripts/run_experiment.py --config configs/occworld.yaml --name occworld_baseline_tpast3_20260815_v2 --seed 42 --eval
+python scripts/run_experiment.py --config configs/multicam_occworld.yaml --name occworld_multicam_tpast3_20260815 --seed 42 --eval
 ```
 
 ---
