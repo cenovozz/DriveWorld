@@ -28,6 +28,7 @@ from driveworld.training.losses import WorldModelLoss
 from driveworld.training.metrics import AverageMeter, compute_iou, compute_video_metrics
 from driveworld.utils.config import Config
 from driveworld.utils.logging import Logger
+from driveworld.utils.seed import set_seed
 
 
 class WorldModelTrainer:
@@ -41,6 +42,7 @@ class WorldModelTrainer:
 
     def __init__(self, config: Config, logger: Optional[Logger] = None):
         self.config = config
+        set_seed(config.training.seed)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if logger is None:
@@ -137,6 +139,7 @@ class WorldModelTrainer:
             image_size=cfg.image_size,
             bev_grid_size=cfg.bev_grid_size,
             bev_resolution=cfg.bev_resolution,
+            num_cameras=cfg.num_cameras,
         )
 
         train_ds = NuScenesWorldModelDataset(split="train", augment=True, **common)
@@ -145,10 +148,12 @@ class WorldModelTrainer:
         self.train_loader = create_dataloader(
             train_ds, batch_size=cfg.batch_size, shuffle=True,
             num_workers=cfg.num_workers, pin_memory=cfg.pin_memory,
+            seed=self.config.training.seed,
         )
         self.val_loader = create_dataloader(
             val_ds, batch_size=cfg.batch_size, shuffle=False,
             num_workers=cfg.num_workers, pin_memory=cfg.pin_memory,
+            seed=self.config.training.seed,
         )
 
         self.logger.info(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")

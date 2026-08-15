@@ -7,7 +7,7 @@ data:
   image_size: [224, 480]
   bev_grid_size: [200, 200]
   bev_resolution: 0.5
-  num_cameras: 1
+  num_cameras: 6
   num_past_frames: 3
   num_future_frames: 6
   frame_interval: 0.5
@@ -22,7 +22,7 @@ encoder:
   bev_feat_dim: 128
   bev_h: 16
   bev_w: 16
-  fusion_method: "cnn"
+  fusion_method: "mean"
 
 occworld:
   hidden_dim: 512
@@ -49,8 +49,8 @@ training:
   warmup_epochs: 10
   gradient_clip: 1.0
   mixed_precision: true
-  checkpoint_dir: "checkpoints/diffusion"
-  log_dir: "logs/diffusion"
+  checkpoint_dir: "checkpoints/multicam_diffusion"
+  log_dir: "logs/multicam_diffusion"
   log_every: 50
   val_every: 1
   save_every: 10

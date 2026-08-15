@@ -1,9 +1,14 @@
 """Data loading utilities."""
 
+import random
 from typing import Optional, Tuple
 
 import torch
 from torch.utils.data import DataLoader, Dataset
+
+
+def _seed_worker(worker_id: int, base_seed: int) -> None:
+    random.seed(base_seed + worker_id)
 
 
 def create_dataloader(
@@ -14,10 +19,18 @@ def create_dataloader(
     pin_memory: bool = True,
     drop_last: bool = True,
     collate_fn: Optional[callable] = None,
+    seed: Optional[int] = None,
 ) -> DataLoader:
     """Create a DataLoader with sensible defaults for world model training."""
     if collate_fn is None:
         collate_fn = collate_world_model
+
+    generator = None
+    worker_init_fn = None
+    if seed is not None:
+        generator = torch.Generator()
+        generator.manual_seed(seed)
+        worker_init_fn = lambda worker_id: _seed_worker(worker_id, seed)
 
     return DataLoader(
         dataset,
@@ -27,6 +40,8 @@ def create_dataloader(
         pin_memory=pin_memory,
         drop_last=drop_last,
         collate_fn=collate_fn,
+        generator=generator,
+        worker_init_fn=worker_init_fn,
         persistent_workers=num_workers > 0,
     )
 

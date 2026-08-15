@@ -18,6 +18,7 @@ class DataConfig:
     image_size: Tuple[int, int] = (224, 480)
     bev_grid_size: Tuple[int, int] = (200, 200)
     bev_resolution: float = 0.5
+    num_cameras: int = 1
     num_past_frames: int = 3
     num_future_frames: int = 6
     frame_interval: float = 0.5
@@ -87,6 +88,12 @@ class LossConfig:
     dice_weight: float = 0.5
     perceptual_weight: float = 0.1
     kl_weight: float = 0.001
+    use_focal: bool = False
+    focal_alpha: float = 0.25
+    focal_gamma: float = 2.0
+    temporal_weighting: bool = False
+    temporal_weight_start: float = 1.0
+    temporal_weight_end: float = 0.5
 
 
 @dataclass

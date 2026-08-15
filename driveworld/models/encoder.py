@@ -196,11 +196,20 @@ class ConvBEVEncoder(nn.Module):
     back to the full BEV resolution.
     """
 
-    def __init__(self, bev_h: int = 16, bev_w: int = 16, bev_feat_dim: int = 128):
+    def __init__(
+        self,
+        bev_h: int = 16,
+        bev_w: int = 16,
+        bev_feat_dim: int = 128,
+        num_cameras: int = 1,
+        fusion_method: str = "mean",
+    ):
         super().__init__()
         self.bev_h = bev_h
         self.bev_w = bev_w
         self.bev_feat_dim = bev_feat_dim
+        self.num_cameras = num_cameras
+        self.fusion_method = fusion_method
 
         self.stem = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=4, stride=2, padding=1),
@@ -218,6 +227,18 @@ class ConvBEVEncoder(nn.Module):
     def forward(
         self, images: torch.Tensor, ego_pose: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
+        if images.dim() == 4:
+            images = images.unsqueeze(2)
+
+        if images.dim() == 6:
+            return self._forward_multicam(images)
+
+        if images.dim() != 5:
+            raise ValueError(
+                f"Expected images with shape (B, T, 3, H, W) or "
+                f"(B, T, C, 3, H, W), got {tuple(images.shape)}"
+            )
+
         B, T, C, H_img, W_img = images.shape
         x = images.view(B * T, C, H_img, W_img)
         x = self.stem(x)
@@ -225,13 +246,72 @@ class ConvBEVEncoder(nn.Module):
         x = x.view(B, T, self.bev_feat_dim, self.bev_h, self.bev_w)
         return x.mean(dim=1)
 
+    def _forward_multicam(self, images: torch.Tensor) -> torch.Tensor:
+        """Fuse a ``(B, T, N, 3, H, W)`` multi-camera tensor into one BEV."""
+        B, T, N, C, H_img, W_img = images.shape
+        if C != 3:
+            raise ValueError(
+                f"Expected 3 image channels for multi-camera input, got {C}"
+            )
+
+        x = images.view(B * T * N, C, H_img, W_img)
+        x = self.stem(x)
+        x = F.adaptive_avg_pool2d(x, (self.bev_h, self.bev_w))
+        x = x.view(B, T, N, self.bev_feat_dim, self.bev_h, self.bev_w)
+
+        if self.fusion_method == "mean":
+            x = x.mean(dim=2)
+        elif self.fusion_method == "sum":
+            x = x.sum(dim=2)
+        else:
+            raise ValueError(
+                f"Unsupported camera fusion method: {self.fusion_method}"
+            )
+
+        return x.mean(dim=1)
+
 
 
 
 def build_encoder(config) -> nn.Module:
-    """Factory function to build the perception encoder."""
+    """Factory function to build the perception encoder.
+
+    The ``fusion_method`` from ``config.encoder`` selects the encoder. The
+    default ``cnn``/``mean`` paths preserve the original single-camera
+    ConvBEVEncoder behavior. For multi-camera inputs, set
+    ``data.num_cameras`` and use ``fusion_method: mean`` (the LSS path is
+    kept as a research scaffold until camera extrinsics are wired in).
+    """
+    num_cameras = getattr(config.data, "num_cameras", 1)
+    fusion_method = config.encoder.fusion_method
+
+    if fusion_method == "lss" and num_cameras > 1:
+        raise NotImplementedError(
+            "Multi-camera LSS is not wired up yet. Use fusion_method: mean "
+            "with the shared ConvBEVEncoder for now."
+        )
+
+    if fusion_method == "lss":
+        return BEVEncoder(
+            backbone=config.encoder.backbone,
+            pretrained=config.encoder.pretrained,
+            bev_feat_dim=config.encoder.bev_feat_dim,
+            bev_h=config.encoder.bev_h,
+            bev_w=config.encoder.bev_w,
+            num_cameras=num_cameras,
+        )
+
+    if fusion_method == "transformer":
+        return TransformerBEVEncoder(
+            bev_h=config.encoder.bev_h,
+            bev_w=config.encoder.bev_w,
+            bev_feat_dim=config.encoder.bev_feat_dim,
+        )
+
     return ConvBEVEncoder(
         bev_h=config.encoder.bev_h,
         bev_w=config.encoder.bev_w,
         bev_feat_dim=config.encoder.bev_feat_dim,
+        num_cameras=num_cameras,
+        fusion_method=fusion_method,
     )

@@ -87,20 +87,55 @@ def lidar_to_occupancy(lidar_points):
     return occupancy
 
 
-def load_front_image(nusc, sample_data_token):
-    """加载前视相机图片为 numpy 数组 (3, H, W) uint8。
+CAMERAS = [
+    "CAM_FRONT",
+    "CAM_FRONT_LEFT",
+    "CAM_FRONT_RIGHT",
+    "CAM_BACK",
+    "CAM_BACK_LEFT",
+    "CAM_BACK_RIGHT",
+]
 
-    Args:
-        nusc: NuScenes 实例
-        sample_data_token: CAM_FRONT 的 sample_data token
 
-    Returns:
-        image: (3, H, W) uint8 RGB 图像
+def quaternion_to_matrix(quaternion):
+    """Convert a scalar-last quaternion ``(x, y, z, w)`` to a 3x3 rotation matrix."""
+    qx, qy, qz, qw = quaternion
+    qx, qy, qz, qw = float(qx), float(qy), float(qz), float(qw)
+    return np.array(
+        [
+            [
+                1.0 - 2.0 * (qy * qy + qz * qz),
+                2.0 * (qx * qy - qz * qw),
+                2.0 * (qx * qz + qy * qw),
+            ],
+            [
+                2.0 * (qx * qy + qz * qw),
+                1.0 - 2.0 * (qx * qx + qz * qz),
+                2.0 * (qy * qz - qx * qw),
+            ],
+            [
+                2.0 * (qx * qz - qy * qw),
+                2.0 * (qy * qz + qx * qw),
+                1.0 - 2.0 * (qx * qx + qy * qy),
+            ],
+        ],
+        dtype=np.float32,
+    )
+
+
+def load_camera_image(nusc, sample_data_token):
+    """Load one camera image as a ``(3, H, W)`` uint8 RGB array.
+
+    Missing or unreadable frames are replaced with zeros so preprocessing
+    remains deterministic.
     """
     import cv2
 
-    sd = nusc.get('sample_data', sample_data_token)
-    img_path = os.path.join(nusc.dataroot, sd['filename'])
+    if sample_data_token is None:
+        return np.zeros((3, *IMAGE_SIZE), dtype=np.uint8)
+
+    sd = nusc.get("sample_data", sample_data_token)
+    img_path = os.path.join(nusc.dataroot, sd["filename"])
 
     img = cv2.imread(img_path)
     if img is None:
@@ -111,61 +146,95 @@ def load_front_image(nusc, sample_data_token):
     return img.transpose(2, 0, 1)  # (H, W, 3) -> (3, H, W)
 
 
-def process_scene(nusc, scene, split, dataroot):
-    """处理单个 nuScenes scene，保存为 .npz 文件。
+def load_camera_calibration(nusc, sample_data_token):
+    """Return ``(intrinsics, extrinsics)`` for one camera.
 
-    Args:
-        nusc: NuScenes 实例
-        scene: nuScenes scene 对象
-        split: 'train' 或 'val'
-        dataroot: nuScenes 数据根目录
-
-    Returns:
-        num_frames: 该 scene 的帧数
+    ``intrinsics`` is ``(3, 3)`` and ``extrinsics`` is the camera-to-ego
+    transform as a ``(4, 4)`` matrix. A missing camera returns identity/zero
+    placeholders.
     """
-    scene_name = scene['name']
-    first_token = scene['first_sample_token']
+    identity_intrinsics = np.eye(3, dtype=np.float32)
+    identity_extrinsics = np.eye(4, dtype=np.float32)
 
-    # 收集该 scene 的所有 sample（按时间顺序）
-    sample = nusc.get('sample', first_token)
+    if sample_data_token is None:
+        return identity_intrinsics, identity_extrinsics
+
+    sd = nusc.get("sample_data", sample_data_token)
+    calibrated_sensor = nusc.get(
+        "calibrated_sensor", sd["calibrated_sensor_token"]
+    )
+
+    intrinsics = np.array(calibrated_sensor["camera_intrinsic"], dtype=np.float32)
+
+    rotation = quaternion_to_matrix(calibrated_sensor["rotation"])
+    extrinsics = np.eye(4, dtype=np.float32)
+    extrinsics[:3, :3] = rotation
+    extrinsics[:3, 3] = calibrated_sensor["translation"]
+
+    return intrinsics, extrinsics
+
+
+def process_scene(nusc, scene, split, dataroot):
+    """Process one nuScenes scene into a multi-camera ``.npz`` file.
+
+    Saved arrays:
+      images:         ``(N, 6, 3, H, W)`` uint8 RGB
+      cam_intrinsics: ``(N, 6, 3, 3)`` float32
+      cam_extrinsics: ``(N, 6, 4, 4)`` float32 camera-to-ego transforms
+      ego_pose:       ``(N, 3)`` float32
+      occupancy:      ``(N, 16, 200, 200)`` bool
+      timestamps:     ``(N,)`` int64
+    """
+    scene_name = scene["name"]
+    first_token = scene["first_sample_token"]
+
+    sample = nusc.get("sample", first_token)
     samples = []
     while True:
         samples.append(sample)
-        if sample['next'] == '':
+        if sample["next"] == "":
             break
-        sample = nusc.get('sample', sample['next'])
+        sample = nusc.get("sample", sample["next"])
 
-    # 提取每帧的数据
     images_list = []
     poses_list = []
     occs_list = []
+    intrinsics_list = []
+    extrinsics_list = []
 
     for sample in samples:
-        # ---- 前视相机 ----
-        cam_front_token = sample['data'].get('CAM_FRONT')
-        if cam_front_token is None:
+        cam_tokens = {cam: sample["data"].get(cam) for cam in CAMERAS}
+
+        # Require at least the front camera; without it ego pose cannot be
+        # derived with the current pose loader.
+        front_token = cam_tokens["CAM_FRONT"]
+        if front_token is None:
             continue
 
-        img = load_front_image(nusc, cam_front_token)
-        images_list.append(img)
+        cam_images = np.stack(
+            [load_camera_image(nusc, cam_tokens[cam]) for cam in CAMERAS],
+            axis=0,
+        )
+        images_list.append(cam_images)
 
-        # ---- 自车位姿 ----
-        cam_data = nusc.get('sample_data', cam_front_token)
-        ego_pose_data = nusc.get('ego_pose', cam_data['ego_pose_token'])
+        calibrations = [
+            load_camera_calibration(nusc, cam_tokens[cam]) for cam in CAMERAS
+        ]
+        intrinsics_list.append(np.stack([c[0] for c in calibrations], axis=0))
+        extrinsics_list.append(np.stack([c[1] for c in calibrations], axis=0))
 
-        x = ego_pose_data['translation'][0]
-        y = ego_pose_data['translation'][1]
-        # yaw from quaternion: yaw = 2 * arctan2(wz, w)
-        qx, qy, qz, qw = ego_pose_data['rotation']
+        front_data = nusc.get("sample_data", front_token)
+        ego_pose_data = nusc.get("ego_pose", front_data["ego_pose_token"])
+        x = ego_pose_data["translation"][0]
+        y = ego_pose_data["translation"][1]
+        qx, qy, qz, qw = ego_pose_data["rotation"]
         yaw = 2 * np.arctan2(qz, qw)
-
         poses_list.append([x, y, yaw])
 
-        # ---- LiDAR 转占用网格 ----
-        lidar_token = sample['data'].get('LIDAR_TOP')
+        lidar_token = sample["data"].get("LIDAR_TOP")
         if lidar_token:
-            lidar_data = nusc.get('sample_data', lidar_token)
-            lidar_path = os.path.join(dataroot, lidar_data['filename'])
+            lidar_data = nusc.get("sample_data", lidar_token)
+            lidar_path = os.path.join(dataroot, lidar_data["filename"])
             if os.path.exists(lidar_path):
                 points = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 5)[:, :3]
                 occ = lidar_to_occupancy(points)
@@ -175,13 +244,14 @@ def process_scene(nusc, scene, split, dataroot):
             occ = np.zeros((Z_BINS, *BEV_GRID), dtype=bool)
         occs_list.append(occ)
 
-    # 保存
-    save_dir = Path(dataroot) / 'v1.0-mini' / split / 'scenes'
+    save_dir = Path(dataroot) / "v1.0-mini" / split / "scenes"
     save_dir.mkdir(parents=True, exist_ok=True)
 
     np.savez_compressed(
-        save_dir / f'{scene_name}.npz',
+        save_dir / f"{scene_name}.npz",
         images=np.stack(images_list, axis=0).astype(np.uint8),
+        cam_intrinsics=np.stack(intrinsics_list, axis=0).astype(np.float32),
+        cam_extrinsics=np.stack(extrinsics_list, axis=0).astype(np.float32),
         ego_pose=np.stack(poses_list, axis=0).astype(np.float32),
         occupancy=np.stack(occs_list, axis=0).astype(bool),
         timestamps=np.arange(len(images_list)).astype(np.int64),

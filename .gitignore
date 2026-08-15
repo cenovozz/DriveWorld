@@ -31,7 +31,14 @@ datasets/
 
 # Logs & outputs
 logs/
-outputs/
+outputs/*
+!outputs/experiments/
+outputs/experiments/*
+!outputs/experiments/*/
+!outputs/experiments/*/config.yaml
+!outputs/experiments/*/effective_config.yaml
+!outputs/experiments/*/run_cmd.txt
+!outputs/experiments/*/metrics.json
 runs/
 wandb/
 checkpoints/

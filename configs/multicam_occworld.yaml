@@ -1,5 +1,5 @@
-# DriveDiffuser Configuration
-# Diffusion-based world model for driving scene prediction
+# OccWorld Configuration
+# Autoregressive 3D occupancy world model
 
 data:
   dataset_root: "data/nuscenes"
@@ -7,11 +7,11 @@ data:
   image_size: [224, 480]
   bev_grid_size: [200, 200]
   bev_resolution: 0.5
-  num_cameras: 1
+  num_cameras: 6
   num_past_frames: 3
   num_future_frames: 6
   frame_interval: 0.5
-  batch_size: 2
+  batch_size: 4
   num_workers: 4
   pin_memory: true
   augment: true
@@ -22,7 +22,7 @@ encoder:
   bev_feat_dim: 128
   bev_h: 16
   bev_w: 16
-  fusion_method: "cnn"
+  fusion_method: "mean"
 
 occworld:
   hidden_dim: 512
@@ -41,19 +41,19 @@ diffusion:
   dropout: 0.0
 
 training:
-  paradigm: "diffusion"
-  max_epochs: 150
-  learning_rate: 0.0002
+  paradigm: "occworld"
+  max_epochs: 100
+  learning_rate: 0.0001
   weight_decay: 0.00001
   lr_scheduler: "cosine"
-  warmup_epochs: 10
+  warmup_epochs: 5
   gradient_clip: 1.0
   mixed_precision: true
-  checkpoint_dir: "checkpoints/diffusion"
-  log_dir: "logs/diffusion"
+  checkpoint_dir: "checkpoints/multicam_occworld"
+  log_dir: "logs/multicam_occworld"
   log_every: 50
   val_every: 1
-  save_every: 10
+  save_every: 5
   seed: 42
 
 loss:
@@ -62,9 +62,9 @@ loss:
   dice_weight: 0.5
   perceptual_weight: 0.1
   kl_weight: 0.001
-  use_focal: false
+  use_focal: true
   focal_alpha: 0.25
   focal_gamma: 2.0
-  temporal_weighting: false
+  temporal_weighting: true
   temporal_weight_start: 1.0
   temporal_weight_end: 0.5

@@ -41,6 +41,7 @@ class NuScenesWorldModelDataset(Dataset):
         image_size: Tuple[int, int] = (224, 480),
         bev_grid_size: Tuple[int, int] = (200, 200),
         bev_resolution: float = 0.5,
+        num_cameras: int = 1,
         num_z: int = 16,
         z_range: Tuple[float, float] = (-4.0, 4.0),
         augment: bool = True,
@@ -54,6 +55,7 @@ class NuScenesWorldModelDataset(Dataset):
         self.image_size = image_size
         self.bev_grid_size = bev_grid_size
         self.bev_resolution = bev_resolution
+        self.num_cameras = num_cameras
         self.num_z = num_z
         self.z_range = z_range
         self.augment = augment
@@ -151,7 +153,7 @@ class NuScenesWorldModelDataset(Dataset):
         all_poses = data["ego_pose"]
         all_occupancy = data.get("occupancy", None)
 
-        past_images = torch.from_numpy(all_images[past_indices]).float() / 255.0
+        past_images = self._index_images(all_images, past_indices)
         past_ego = torch.from_numpy(all_poses[past_indices]).float()
         past_ego = past_ego - past_ego[0:1]
 
@@ -171,13 +173,38 @@ class NuScenesWorldModelDataset(Dataset):
             "token": f"{sample['scene']}_{sample['start_frame']}",
         }
 
+    def _index_images(self, all_images, indices):
+        """Select frames and normalize while preserving the camera axis.
+
+        Supports legacy single-camera ``.npz`` files with shape
+        ``(N, 3, H, W)`` and multi-camera files with shape
+        ``(N, C, 3, H, W)``.
+        """
+        images = np.asarray(all_images[indices])
+
+        if images.ndim == 5:
+            return torch.from_numpy(images).float() / 255.0
+
+        if images.ndim == 4:
+            if self.num_cameras == 1:
+                return torch.from_numpy(images).float() / 255.0
+            raise ValueError(
+                "Multi-camera config requires re-running "
+                "scripts/preprocess_nuscenes.py to generate "
+                "(N, C, 3, H, W) image arrays."
+            )
+
+        raise ValueError(
+            f"Unexpected image array shape {images.shape}; "
+            "expected (N, 3, H, W) or (N, C, 3, H, W)."
+        )
     def _generate_synthetic_sample(self, sample: Dict) -> Dict[str, torch.Tensor]:
         """Generate a synthetic sample for development/testing."""
         Tp, Tf = self.num_past_frames, self.num_future_frames
         H, W = self.image_size
         BvH, BvW = self.bev_grid_size
 
-        past_images = torch.rand(Tp, 3, H, W)
+        past_images = torch.rand(Tp, self.num_cameras, 3, H, W)
         past_ego = torch.zeros(Tp, 3)
         past_ego[:, 0] = torch.linspace(0, Tp * 0.5, Tp)
 
