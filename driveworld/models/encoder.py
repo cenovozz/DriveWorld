@@ -31,6 +31,7 @@ class BEVEncoder(nn.Module):
         depth_bins: int = 64,
         depth_range: Tuple[float, float] = (2.0, 50.0),
         num_cameras: int = 1,
+        bev_range: float = 50.0,
     ):
         super().__init__()
         self.bev_h = bev_h
@@ -39,6 +40,7 @@ class BEVEncoder(nn.Module):
         self.depth_bins = depth_bins
         self.depth_range = depth_range
         self.num_cameras = num_cameras
+        self.bev_range = bev_range
 
         self.backbone = self._build_backbone(backbone, pretrained)
         backbone_dim = 2048 if "50" in backbone else 512
@@ -61,13 +63,29 @@ class BEVEncoder(nn.Module):
 
     def _build_backbone(self, name: str, pretrained: bool) -> nn.Module:
         import torchvision.models as models
-        if name == "resnet50":
-            model = models.resnet50(weights="IMAGENET1K_V1" if pretrained else None)
-            return nn.Sequential(*list(model.children())[:-2])
-        elif name == "resnet18":
-            model = models.resnet18(weights="IMAGENET1K_V1" if pretrained else None)
-            return nn.Sequential(*list(model.children())[:-2])
-        raise ValueError(f"Unsupported backbone: {name}")
+
+        builders = {
+            "resnet50": models.resnet50,
+            "resnet18": models.resnet18,
+        }
+        if name not in builders:
+            raise ValueError(f"Unsupported backbone: {name}")
+
+        if pretrained:
+            try:
+                model = builders[name](weights="IMAGENET1K_V1")
+            except Exception as exc:  # noqa: BLE001 - network/cache failures
+                import warnings
+
+                warnings.warn(
+                    f"Failed to load pretrained {name} weights ({exc}); "
+                    "falling back to random initialization."
+                )
+                model = builders[name](weights=None)
+        else:
+            model = builders[name](weights=None)
+
+        return nn.Sequential(*list(model.children())[:-2])
 
     def get_depth_bins(self, device: torch.device) -> torch.Tensor:
         if self._depth_index is None or self._depth_index.device != device:
@@ -78,17 +96,29 @@ class BEVEncoder(nn.Module):
         return self._depth_index
 
     def forward(
-        self, images: torch.Tensor, ego_pose: Optional[torch.Tensor] = None
+        self,
+        images: torch.Tensor,
+        ego_pose: Optional[torch.Tensor] = None,
+        intrinsics: Optional[torch.Tensor] = None,
+        extrinsics: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass.
 
         Args:
-            images: (B, T, C, H, W) multi-timestamp images
+            images: (B, T, C, H, W) or (B, T, N, C, H, W)
             ego_pose: (B, T, 3) ego poses (optional, for future use)
+            intrinsics: optional (B, T, N, 3, 3) camera intrinsics
+            extrinsics: optional (B, T, N, 4, 4) camera-to-ego transforms
 
         Returns:
             bev_feat: (B, bev_feat_dim, bev_h, bev_w) BEV features
         """
+        if images.dim() == 4:
+            images = images.unsqueeze(2)
+
+        if images.dim() == 6:
+            return self._forward_multicam_lss(images, intrinsics, extrinsics)
+
         B, T, C, H_img, W_img = images.shape
         images_flat = images.view(B * T, C, H_img, W_img)
 
@@ -96,7 +126,7 @@ class BEVEncoder(nn.Module):
         x = self.depth_net(backbone_feat)
 
         depth_logits = x[:, : self.depth_bins]
-        context_feat = x[:, self.depth_bins:]
+        context_feat = x[:, self.depth_bins :]
 
         depth_prob = F.softmax(depth_logits, dim=1)
         depth_bins = self.get_depth_bins(images.device)
@@ -115,6 +145,137 @@ class BEVEncoder(nn.Module):
         bev_feat = bev_feat / (T * self.num_cameras + 1e-8)
         bev_feat = self.bev_compressor(bev_feat)
         return bev_feat
+
+    def _forward_multicam_lss(
+        self,
+        images: torch.Tensor,
+        intrinsics: Optional[torch.Tensor],
+        extrinsics: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        """LSS-style multi-camera BEV construction.
+
+        Projects each depth candidate from camera coordinates to ego
+        coordinates, then splats context features into a shared BEV grid.
+        """
+        B, T, N, C, H_img, W_img = images.shape
+        if intrinsics is None or extrinsics is None:
+            raise ValueError(
+                "Multi-camera LSS requires camera intrinsics and extrinsics. "
+                "Re-run scripts/preprocess_nuscenes.py to generate them."
+            )
+
+        images_flat = images.view(B * T * N, C, H_img, W_img)
+        backbone_feat = self.backbone(images_flat)
+        x = self.depth_net(backbone_feat)
+
+        depth_logits = x[:, : self.depth_bins]
+        context_feat = x[:, self.depth_bins :]
+
+        depth_prob = F.softmax(depth_logits, dim=1)
+        feat_h, feat_w = depth_prob.shape[-2:]
+        depth_prob = depth_prob.view(B, T, N, self.depth_bins, feat_h, feat_w)
+        context_feat = context_feat.view(
+            B, T, N, self.bev_feat_dim, feat_h, feat_w
+        )
+
+        bev_feat = torch.zeros(
+            B, self.bev_feat_dim, self.bev_h, self.bev_w,
+            device=images.device, dtype=context_feat.dtype,
+        )
+        bev_weight = torch.zeros(
+            B, 1, self.bev_h, self.bev_w,
+            device=images.device, dtype=context_feat.dtype,
+        )
+
+        for b in range(B):
+            for t in range(T):
+                for n in range(N):
+                    self._splat_camera(
+                        bev_feat[b],
+                        bev_weight[b, 0],
+                        context_feat[b, t, n],
+                        depth_prob[b, t, n],
+                        intrinsics[b, t, n],
+                        extrinsics[b, t, n],
+                        H_img,
+                        W_img,
+                    )
+
+        bev_feat = bev_feat / (bev_weight + 1e-8)
+        return self.bev_compressor(bev_feat)
+
+    def _splat_camera(
+        self,
+        bev_feat: torch.Tensor,
+        bev_weight: torch.Tensor,
+        context_feat: torch.Tensor,
+        depth_prob: torch.Tensor,
+        intrinsics: torch.Tensor,
+        extrinsics: torch.Tensor,
+        image_h: int,
+        image_w: int,
+    ) -> None:
+        """Accumulate one camera's LSS splat into BEV buffers in-place."""
+        device = context_feat.device
+        feat_h, feat_w = context_feat.shape[-2:]
+        depth_bins = self.get_depth_bins(device)
+
+        u = (torch.arange(feat_w, device=device, dtype=torch.float32) + 0.5) * (
+            image_w / feat_w
+        )
+        v = (torch.arange(feat_h, device=device, dtype=torch.float32) + 0.5) * (
+            image_h / feat_h
+        )
+        grid_u, grid_v = torch.meshgrid(u, v, indexing="xy")
+
+        fx = intrinsics[0, 0]
+        fy = intrinsics[1, 1]
+        cx = intrinsics[0, 2]
+        cy = intrinsics[1, 2]
+
+        x_norm = (grid_u - cx) / fx
+        y_norm = (grid_v - cy) / fy
+        ones = torch.ones_like(x_norm)
+
+        cam_pts = torch.stack([x_norm, y_norm, ones], dim=-1).unsqueeze(2)
+        cam_pts = cam_pts * depth_bins.view(1, 1, -1, 1)
+        cam_pts = torch.cat(
+            [cam_pts, torch.ones_like(cam_pts[..., :1])], dim=-1
+        )
+        cam_pts = cam_pts.view(-1, 4)
+
+        ego_pts = torch.einsum("ij,pj->pi", extrinsics, cam_pts)
+        ego_x = ego_pts[:, 0]
+        ego_y = ego_pts[:, 1]
+
+        half_range = self.bev_range
+        cell_x = (2.0 * half_range) / self.bev_w
+        cell_y = (2.0 * half_range) / self.bev_h
+        gx = ((ego_x + half_range) / cell_x).long()
+        gy = ((ego_y + half_range) / cell_y).long()
+
+        valid = (
+            (gx >= 0) & (gx < self.bev_w) & (gy >= 0) & (gy < self.bev_h)
+        )
+        if not valid.any():
+            return
+
+        gx = gx[valid]
+        gy = gy[valid]
+        idx = gy * self.bev_w + gx
+
+        weights = depth_prob.permute(1, 2, 0).reshape(-1)[valid]
+        context_flat = context_feat.reshape(self.bev_feat_dim, -1)
+        context_flat = (
+            context_flat.unsqueeze(-1)
+            .expand(-1, feat_h * feat_w, self.depth_bins)
+            .reshape(self.bev_feat_dim, -1)[:, valid]
+        )
+
+        weighted_feats = context_flat * weights.unsqueeze(0)
+        bev_flat = bev_feat.view(self.bev_feat_dim, -1)
+        bev_flat.index_add_(1, idx, weighted_feats)
+        bev_weight.view(-1).index_add_(0, idx, weights)
 
     def _splat(self, feat: torch.Tensor, depth: torch.Tensor) -> torch.Tensor:
         """Simplified splatting: project features to BEV via bilinear sampling."""
@@ -225,7 +386,11 @@ class ConvBEVEncoder(nn.Module):
         )
 
     def forward(
-        self, images: torch.Tensor, ego_pose: Optional[torch.Tensor] = None
+        self,
+        images: torch.Tensor,
+        ego_pose: Optional[torch.Tensor] = None,
+        intrinsics: Optional[torch.Tensor] = None,
+        extrinsics: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if images.dim() == 4:
             images = images.unsqueeze(2)
@@ -284,12 +449,6 @@ def build_encoder(config) -> nn.Module:
     """
     num_cameras = getattr(config.data, "num_cameras", 1)
     fusion_method = config.encoder.fusion_method
-
-    if fusion_method == "lss" and num_cameras > 1:
-        raise NotImplementedError(
-            "Multi-camera LSS is not wired up yet. Use fusion_method: mean "
-            "with the shared ConvBEVEncoder for now."
-        )
 
     if fusion_method == "lss":
         return BEVEncoder(

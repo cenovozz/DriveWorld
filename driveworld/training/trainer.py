@@ -205,15 +205,29 @@ class WorldModelTrainer:
 
         for batch_idx, batch in enumerate(self.train_loader):
             batch = self._to_device(batch)
-            past_images, past_ego, future_occ, future_ego, _ = batch
+            past_images, past_ego, future_occ, future_ego, intrinsics, extrinsics, _ = batch
 
             self.optimizer.zero_grad()
 
             with autocast(enabled=self.config.training.mixed_precision):
                 if self.config.training.paradigm == "occworld":
-                    output = self.model(past_images, past_ego, future_ego, future_occ)
+                    output = self.model(
+                        past_images,
+                        past_ego,
+                        future_ego,
+                        future_occ,
+                        intrinsics,
+                        extrinsics,
+                    )
                 else:
-                    output = self.model(past_images, past_ego, future_ego, future_occ)
+                    output = self.model(
+                        past_images,
+                        past_ego,
+                        future_ego,
+                        future_occ,
+                        intrinsics,
+                        extrinsics,
+                    )
 
                 losses = self.loss_fn(output, batch)
                 loss = losses["total"]
@@ -248,15 +262,29 @@ class WorldModelTrainer:
 
         for batch in self.val_loader:
             batch = self._to_device(batch)
-            past_images, past_ego, future_occ, future_ego, _ = batch
+            past_images, past_ego, future_occ, future_ego, intrinsics, extrinsics, _ = batch
 
             if self.config.training.paradigm == "occworld":
-                output = self.model(past_images, past_ego, future_ego, future_occ)
+                output = self.model(
+                    past_images,
+                    past_ego,
+                    future_ego,
+                    future_occ,
+                    intrinsics,
+                    extrinsics,
+                )
                 if "occupancy_pred" in output:
                     ious = compute_iou(output["occupancy_pred"], future_occ)
                     iou_meter.update(ious["miou"], past_images.size(0))
             else:
-                output = self.model(past_images, past_ego, future_ego, future_occ)
+                output = self.model(
+                    past_images,
+                    past_ego,
+                    future_ego,
+                    future_occ,
+                    intrinsics,
+                    extrinsics,
+                )
 
             losses = self.loss_fn(output, batch)
             loss_meter.update(losses["total"].item(), past_images.size(0))
@@ -267,12 +295,22 @@ class WorldModelTrainer:
         return metrics
 
     def _to_device(self, batch) -> tuple:
-        past_images, past_ego, future_occ, future_ego, tokens = batch
+        (
+            past_images,
+            past_ego,
+            future_occ,
+            future_ego,
+            intrinsics,
+            extrinsics,
+            tokens,
+        ) = batch
         return (
             past_images.to(self.device),
             past_ego.to(self.device),
             future_occ.to(self.device),
             future_ego.to(self.device),
+            intrinsics.to(self.device),
+            extrinsics.to(self.device),
             tokens,
         )
 

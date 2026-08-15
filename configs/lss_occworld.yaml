@@ -1,0 +1,70 @@
+# OccWorld Configuration
+# Autoregressive 3D occupancy world model
+
+data:
+  dataset_root: "data/nuscenes"
+  version: "v1.0-mini"
+  image_size: [224, 480]
+  bev_grid_size: [200, 200]
+  bev_resolution: 0.5
+  num_cameras: 6
+  num_past_frames: 3
+  num_future_frames: 6
+  frame_interval: 0.5
+  batch_size: 2
+  num_workers: 4
+  pin_memory: true
+  augment: true
+
+encoder:
+  backbone: "resnet50"
+  pretrained: true
+  bev_feat_dim: 128
+  bev_h: 16
+  bev_w: 16
+  fusion_method: "lss"
+
+occworld:
+  hidden_dim: 512
+  num_layers: 6
+  num_heads: 8
+  vocab_size: 8192
+  dropout: 0.1
+  use_flash_attn: false
+
+diffusion:
+  num_timesteps: 1000
+  beta_schedule: "cosine"
+  unet_channels: [128, 256, 512]
+  attention_resolutions: [16, 8]
+  num_res_blocks: 2
+  dropout: 0.0
+
+training:
+  paradigm: "occworld"
+  max_epochs: 100
+  learning_rate: 0.0001
+  weight_decay: 0.00001
+  lr_scheduler: "cosine"
+  warmup_epochs: 5
+  gradient_clip: 1.0
+  mixed_precision: true
+  checkpoint_dir: "checkpoints/lss_occworld"
+  log_dir: "logs/lss_occworld"
+  log_every: 50
+  val_every: 1
+  save_every: 5
+  seed: 42
+
+loss:
+  occupancy_weight: 1.0
+  cross_entropy_weight: 1.0
+  dice_weight: 0.5
+  perceptual_weight: 0.1
+  kl_weight: 0.001
+  use_focal: true
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+  temporal_weighting: true
+  temporal_weight_start: 1.0
+  temporal_weight_end: 0.5

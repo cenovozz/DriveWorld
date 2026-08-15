@@ -53,14 +53,26 @@ class WorldModelEvaluator:
 
         for batch_idx, batch in enumerate(tqdm(dataloader, desc="Evaluating")):
             batch = self._to_device(batch)
-            past_images, past_ego, future_occ, future_ego, tokens = batch
+            past_images, past_ego, future_occ, future_ego, intrinsics, extrinsics, tokens = batch
 
             if self.config.training.paradigm == "occworld":
-                output = self.model(past_images, past_ego, future_ego, future_occ)
+                output = self.model(
+                    past_images,
+                    past_ego,
+                    future_ego,
+                    future_occ,
+                    intrinsics,
+                    extrinsics,
+                )
                 pred = output["occupancy_pred"]
             else:
                 pred_logits = self.model.sample(
-                    past_images, past_ego, future_ego, num_inference_steps=50
+                    past_images,
+                    past_ego,
+                    future_ego,
+                    num_inference_steps=50,
+                    past_intrinsics=intrinsics,
+                    past_extrinsics=extrinsics,
                 )
                 pred = pred_logits.unsqueeze(2).expand(-1, -1, 2, -1, -1, -1)
 
@@ -94,11 +106,21 @@ class WorldModelEvaluator:
         return results
 
     def _to_device(self, batch):
-        past_images, past_ego, future_occ, future_ego, tokens = batch
+        (
+            past_images,
+            past_ego,
+            future_occ,
+            future_ego,
+            intrinsics,
+            extrinsics,
+            tokens,
+        ) = batch
         return (
             past_images.to(self.device),
             past_ego.to(self.device),
             future_occ.to(self.device),
             future_ego.to(self.device),
+            intrinsics.to(self.device),
+            extrinsics.to(self.device),
             tokens,
         )

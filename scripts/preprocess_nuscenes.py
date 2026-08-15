@@ -166,6 +166,19 @@ def load_camera_calibration(nusc, sample_data_token):
 
     intrinsics = np.array(calibrated_sensor["camera_intrinsic"], dtype=np.float32)
 
+    # nuScenes intrinsics are defined at the original sensor resolution, but
+    # load_camera_image resizes every frame to IMAGE_SIZE. Rescale the focal
+    # lengths and principal point to the resized image so the LSS frustum
+    # projection stays geometrically correct.
+    orig_w = float(sd["width"])
+    orig_h = float(sd["height"])
+    scale_x = IMAGE_SIZE[1] / orig_w
+    scale_y = IMAGE_SIZE[0] / orig_h
+    intrinsics[0, 0] *= scale_x
+    intrinsics[0, 2] *= scale_x
+    intrinsics[1, 1] *= scale_y
+    intrinsics[1, 2] *= scale_y
+
     rotation = quaternion_to_matrix(calibrated_sensor["rotation"])
     extrinsics = np.eye(4, dtype=np.float32)
     extrinsics[:3, :3] = rotation

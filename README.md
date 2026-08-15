@@ -37,7 +37,8 @@ Two paradigms share the same data pipeline and training loop:
 - Evaluation metrics: mIoU, Dice, PSNR, per-timestep IoU
 
 > Current status: OccWorld and DriveDiffuser are the two trainable paths.
-> The full BEVFormer/LSS encoder variants are kept as research scaffolds.
+> `BEVEncoder` now has an LSS multi-camera path (depth net + frustum splat);
+> it is implemented but not yet validated on real data. BEVFormer remains a scaffold.
 
 ---
 
@@ -123,8 +124,8 @@ Generates future occupancy through conditional denoising:
 ### Encoders
 
 - `ConvBEVEncoder`: default and validated (v1).
-- `BEVEncoder` (LSS-style) and `TransformerBEVEncoder` (BEVFormer-style): included
-  as research scaffolds, not enabled by default.
+- `BEVEncoder` (LSS-style): implemented with `fusion_method: lss` for 6-camera inputs;
+  not yet validated on real data. `TransformerBEVEncoder` (BEVFormer-style) is a scaffold.
 
 ---
 
@@ -231,7 +232,7 @@ Tracked on AutoDL, 100 epochs, seed 42. Both runs use Focal + Dice + temporal we
 | **IoU@tmid** | 0.1343 | 0.1303 |
 | **IoU@tfinal** | 0.1375 | 0.1355 |
 
-The current `mean` fusion reaches comparable mIoU to the single-camera baseline and improves PSNR/MSE. The LSS projection path is the next upgrade.
+The current `mean` fusion reaches comparable mIoU to the single-camera baseline and improves PSNR/MSE. The LSS projection path (`configs/lss_occworld.yaml`) is implemented as the next upgrade but has not yet been validated.
 
 Reproduce:
 

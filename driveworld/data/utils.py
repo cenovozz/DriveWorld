@@ -60,5 +60,15 @@ def collate_world_model(batch) -> Tuple[torch.Tensor, ...]:
     past_ego_pose = torch.stack([s["past_ego_pose"] for s in batch])
     future_occupancy = torch.stack([s["future_occupancy"] for s in batch])
     future_ego_pose = torch.stack([s["future_ego_pose"] for s in batch])
+    past_intrinsics = torch.stack([s["past_intrinsics"] for s in batch])
+    past_extrinsics = torch.stack([s["past_extrinsics"] for s in batch])
     tokens = [s["token"] for s in batch]
-    return past_images, past_ego_pose, future_occupancy, future_ego_pose, tokens
+    return (
+        past_images,
+        past_ego_pose,
+        future_occupancy,
+        future_ego_pose,
+        past_intrinsics,
+        past_extrinsics,
+        tokens,
+    )

@@ -152,10 +152,19 @@ class NuScenesWorldModelDataset(Dataset):
         all_images = data["images"]
         all_poses = data["ego_pose"]
         all_occupancy = data.get("occupancy", None)
+        all_intrinsics = data.get("cam_intrinsics", None)
+        all_extrinsics = data.get("cam_extrinsics", None)
 
         past_images = self._index_images(all_images, past_indices)
         past_ego = torch.from_numpy(all_poses[past_indices]).float()
         past_ego = past_ego - past_ego[0:1]
+
+        past_intrinsics = self._index_calibration(
+            all_intrinsics, past_indices, self.num_cameras, 3
+        )
+        past_extrinsics = self._index_calibration(
+            all_extrinsics, past_indices, self.num_cameras, 4
+        )
 
         if all_occupancy is not None:
             future_occ = torch.from_numpy(all_occupancy[future_indices]).long()
@@ -170,8 +179,39 @@ class NuScenesWorldModelDataset(Dataset):
             "past_ego_pose": past_ego,
             "future_occupancy": future_occ,
             "future_ego_pose": future_ego,
+            "past_intrinsics": past_intrinsics,
+            "past_extrinsics": past_extrinsics,
             "token": f"{sample['scene']}_{sample['start_frame']}",
         }
+
+    def _index_calibration(self, calibration, indices, num_cameras, matrix_size):
+        """Return calibration for selected frames.
+
+        ``calibration`` may be ``(N, C, D, D)`` from a real .npz, ``(N, D, D)``
+        from a legacy single-camera file, or None for synthetic data. In the
+        None case, identity matrices are generated to keep encoder interfaces
+        stable.
+        """
+        if calibration is None:
+            identity = torch.eye(matrix_size)
+            return identity.repeat(len(indices), num_cameras, 1, 1)
+
+        calib = np.asarray(calibration[indices])
+
+        if calib.ndim == 3:
+            # Legacy single-camera calibration (T, D, D). Duplicate it when a
+            # multi-camera config is used so the encoder still receives the
+            # expected camera axis.
+            if num_cameras == 1:
+                return torch.from_numpy(calib).float()
+            calib = np.repeat(calib[:, None, ...], num_cameras, axis=1)
+            return torch.from_numpy(calib).float()
+
+        # Multi-camera calibration (T, C, D, D). Select CAM_FRONT for the
+        # single-camera config to keep the encoder contract intact.
+        if num_cameras == 1 and calib.shape[1] > 1:
+            calib = calib[:, 0, ...]
+        return torch.from_numpy(calib).float()
 
     def _index_images(self, all_images, indices):
         """Select frames and normalize while preserving the camera axis.
@@ -225,11 +265,16 @@ class NuScenesWorldModelDataset(Dataset):
         future_ego = torch.zeros(Tf, 3)
         future_ego[:, 0] = torch.linspace(Tp * 0.5, (Tp + Tf) * 0.5, Tf)
 
+        past_intrinsics = torch.eye(3).repeat(Tp, self.num_cameras, 1, 1)
+        past_extrinsics = torch.eye(4).repeat(Tp, self.num_cameras, 1, 1)
+
         return {
             "past_images": past_images,
             "past_ego_pose": past_ego,
             "future_occupancy": future_occ,
             "future_ego_pose": future_ego,
+            "past_intrinsics": past_intrinsics,
+            "past_extrinsics": past_extrinsics,
             "token": f"synthetic_{sample['scene']}_{sample['start_frame']}",
         }
 

@@ -254,8 +254,20 @@ class DriveDiffuser(nn.Module):
         betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
         return torch.clip(betas, 0.0001, 0.9999)
 
-    def _conditioning(self, past_images, past_ego_pose, future_ego_pose):
-        bev_feat = self.encoder(past_images, past_ego_pose)
+    def _conditioning(
+        self,
+        past_images,
+        past_ego_pose,
+        future_ego_pose,
+        past_intrinsics=None,
+        past_extrinsics=None,
+    ):
+        bev_feat = self.encoder(
+            past_images,
+            past_ego_pose,
+            past_intrinsics,
+            past_extrinsics,
+        )
 
         cond_map = self.cond_proj(bev_feat)
         cond_map = F.interpolate(
@@ -285,12 +297,18 @@ class DriveDiffuser(nn.Module):
         past_ego_pose: torch.Tensor,
         future_ego_pose: torch.Tensor,
         future_occupancy: Optional[torch.Tensor] = None,
+        past_intrinsics: Optional[torch.Tensor] = None,
+        past_extrinsics: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         B, Tf, Z, H, W = future_occupancy.shape
         device = past_images.device
 
         cond_map, cond_vec = self._conditioning(
-            past_images, past_ego_pose, future_ego_pose
+            past_images,
+            past_ego_pose,
+            future_ego_pose,
+            past_intrinsics,
+            past_extrinsics,
         )
 
         x0 = future_occupancy.float().reshape(B, Tf * Z, H, W)
@@ -314,6 +332,8 @@ class DriveDiffuser(nn.Module):
         future_ego_pose: torch.Tensor,
         num_inference_steps: int = 50,
         eta: float = 0.0,
+        past_intrinsics: Optional[torch.Tensor] = None,
+        past_extrinsics: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """DDIM-style sampling.
 
@@ -325,7 +345,11 @@ class DriveDiffuser(nn.Module):
         device = past_images.device
 
         cond_map, cond_vec = self._conditioning(
-            past_images, past_ego_pose, future_ego_pose
+            past_images,
+            past_ego_pose,
+            future_ego_pose,
+            past_intrinsics,
+            past_extrinsics,
         )
 
         channels = self.num_future_frames * self.num_z

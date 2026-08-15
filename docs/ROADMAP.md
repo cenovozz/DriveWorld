@@ -23,7 +23,7 @@
 | 预处理 | `preprocess_nuscenes.py` 读取 6 相机并保存内参/外参 + LIDAR_TOP | `scripts/preprocess_nuscenes.py` | ⚠️ 未在真实数据上验证 |
 | OccWorld | 单次 Transformer 解码，非严格自回归 | `driveworld/models/occworld.py` | ✅ 可训练，约 36M |
 | DriveDiffuser | 2D UNet + DDPM/DDIM，50 步采样 | `driveworld/models/diffusion.py` | ✅ 可训练，约 49M |
-| 编码器 | `ConvBEVEncoder` 已支持 6 相机 mean/sum 融合；LSS/BEVFormer 仍是脚手架 | `driveworld/models/encoder.py` | ⚠️ LSS 投影未实现 |
+| 编码器 | `ConvBEVEncoder` 已支持 6 相机 mean/sum 融合；`BEVEncoder` 已实现 LSS depth net + frustum splat | `driveworld/models/encoder.py` | ⚠️ LSS 已实现，待真实数据验证 |
 | 训练 | AMP、warmup+cosine、checkpoint、TensorBoard | `driveworld/training/trainer.py` | ✅ 可用；缺 EMA/早停 |
 | 评估 | mIoU、Dice、PSNR、per-step IoU、可视化 | `driveworld/eval/evaluator.py` | ✅ 可用；缺报告生成 |
 | 工程 | CI、Docker、pre-commit、CLI、部署文档 | `.github/workflows/ci.yml`, `Dockerfile` | ✅ 基础完整 |
@@ -31,7 +31,7 @@
 
 ### 需要先修正的认知偏差
 
-1. `build_encoder()` 已支持 `cnn/mean` 多相机 ConvBEV 融合；LSS 的 `BEVEncoder` 和已保存的 `cam_intrinsics/cam_extrinsics` 尚未接入，不能宣称已实现 LSS。
+1. `build_encoder()` 已支持 `cnn/mean` 多相机 ConvBEV 融合，`BEVEncoder` 已接入 `cam_intrinsics/cam_extrinsics` 实现 LSS 投影；但 LSS 路径尚未在真实数据上跑出指标，先标注「已实现、未验证」，不要宣称有提升。
 2. 当前 `OccWorld` 的 `forward` 是「BEV tokens + future ego tokens 一次性读未来 token」，不是真正逐帧自回归 rollout；简历和文档要描述成 one-shot/teacher-forcing 解码，避免面试被追问。
 3. 扩散评估里用 `pred_logits.unsqueeze(2).expand(...)` 再 `argmax(dim=2)`，对概率图不严谨；应改为 `(pred > threshold)` 或显式定义二类 logits。
 4. mini 数据集只有 10 个 scene，预处理按 8:2 分 train/val；完整 trainval 才有 ~700 train / ~150 val。原路线图里「~700 个 .npz」只适用于完整版。
@@ -206,19 +206,19 @@ Get-ChildItem outputs/experiments/occworld_baseline_tpast3_20260815
 
 ### 2.1 多相机融合（最重要）
 
-**状态：数据层 + ConvBEV 融合路径已落地；LSS 投影路径仍未实现。**
+**状态：数据层 + ConvBEV 融合路径已落地；LSS 投影路径已实现，尚未在真实数据上验证。**
 
 **已改动**
 
-- `scripts/preprocess_nuscenes.py`：读取 6 相机，保存 `images (N,6,3,H,W)`、`cam_intrinsics (N,6,3,3)`、`cam_extrinsics (N,6,4,4)`。
-- `driveworld/data/dataset.py`：`past_images` 变为 `(T,6,3,H,W)`；保留单相机旧 `.npz` 兼容。
-- `driveworld/models/encoder.py`：`ConvBEVEncoder` 支持 6 相机 `mean/sum` 融合，`build_encoder()` 根据 `data.num_cameras` 和 `encoder.fusion_method` 选择路径。
-- `configs/multicam_occworld.yaml`、`configs/multicam_diffusion.yaml` 已新增。
-- `driveworld/utils/config.py`、`driveworld/training/trainer.py`、`scripts/run_experiment.py` 已接入 `num_cameras`。
+- `scripts/preprocess_nuscenes.py`：读取 6 相机，保存 `images (N,6,3,H,W)`、`cam_intrinsics (N,6,3,3)`、`cam_extrinsics (N,6,4,4)`；内参已按 resize 后的 `224x480` 缩放，保证 LSS 几何正确。
+- `driveworld/data/dataset.py`：`past_images` 变为 `(T,6,3,H,W)`，并输出 `past_intrinsics/past_extrinsics`；保留单相机旧 `.npz` 兼容。
+- `driveworld/models/encoder.py`：`ConvBEVEncoder` 支持 6 相机 `mean/sum` 融合；`BEVEncoder` 新增 `_forward_multicam_lss` + `_splat_camera`（depth net + frustum 投影 + BEV splat）。
+- `driveworld/models/occworld.py`、`diffusion.py`、`training/trainer.py`、`eval/evaluator.py`、`data/utils.py`：标定参数已全链路透传。
+- `configs/lss_occworld.yaml`、`configs/lss_diffusion.yaml` 已新增（`fusion_method: lss`）。
 
 **剩余操作（按顺序）**
 
-1. 在真实数据上重新预处理：
+1. 在真实数据上重新预处理（内参缩放需要重跑）：
    ```powershell
    python scripts/preprocess_nuscenes.py --dataroot data/nuscenes --version v1.0-mini
    ```
@@ -227,20 +227,21 @@ Get-ChildItem outputs/experiments/occworld_baseline_tpast3_20260815
    ```powershell
    python -c "import numpy as np; d=np.load('data/nuscenes/v1.0-mini/train/scenes/<scene>.npz'); print(d['images'].shape, d['cam_intrinsics'].shape, d['cam_extrinsics'].shape)"
    ```
+   期望输出：`images (N,6,3,224,480)`、`cam_intrinsics (N,6,3,3)`、`cam_extrinsics (N,6,4,4)`。
 
-3. 跑多相机 1 epoch smoke train：
+3. 先跑 LSS 1 epoch smoke train：
    ```powershell
-   python scripts/run_experiment.py --config configs/multicam_occworld.yaml --name occworld_multicam_tpast3_20260815 --seed 42 --eval
+   python scripts/run_experiment.py --config configs/lss_occworld.yaml --name occworld_lss_smoke_20260815 --seed 42
    ```
-   若显存不足，把 `batch_size` 从 4 降到 2。
+   显存不足时把 `batch_size` 从 2 降到 1；torchvision 无法下载 ImageNet 权重时把 `encoder.pretrained` 改为 `false`。
 
-4. 跑「单相机 vs 多相机」消融：同一 seed、同一 loss，只改 `num_cameras` 和 config，比较 `metrics.json` 中的 `miou`/`dice`。
+4. 跑「ConvBEV mean vs LSS」同口径消融：同一 seed、同一 loss、同一 `bev_h/bev_w=16`，只改 `encoder.fusion_method`，比较 `metrics.json` 的 `miou`/`dice`/`PSNR`。
 
-**下一步模型层**
+**LSS 实现要点与已知瓶颈**
 
-- 实现真正 LSS：使用已保存的 `cam_intrinsics/cam_extrinsics` 做 depth net + frustum 投影 + BEV splat。
-- 当前 `BEVEncoder._splat` 只是 bilinear 近似，多相机 LSS 尚未接入。
+- `_splat_camera` 用内参把 feature-grid 像素反投影到 camera 坐标，再经 camera-to-ego 外参 splat 到共享 BEV，6 相机在 BEV 网格上按深度概率加权累加。
 - 兼容性规则：`num_cameras=1` 走原单相机路径，旧 checkpoint 不受影响。
+- 已知瓶颈：当前 BEV 只有 `16x16`、`bev_range=50`，每格 `6.25m`，几何信息被高度量化；若 LSS 提升不明显，优先把 `encoder.bev_h/bev_w` 提到 `32x32` 或 `50x50` 再做对比，而不是否定 LSS 本身。
 
 **实测结果（AutoDL, 2026-08-15）**
 
@@ -259,8 +260,8 @@ Get-ChildItem outputs/experiments/occworld_baseline_tpast3_20260815
 
 结论：当前 `mean` 融合的多相机 mIoU 与单相机 baseline 基本持平，PSNR/MSE 略优；下一步用 LSS 投影替换共享 ConvBEV 融合，再做同口径对比。
 
-**预期提升**：mIoU +3~5 个百分点；当前实现尚未达到该预期。
-**风险**：LSS 训练不稳定，先固定 backbone 只训 depth head；LSS 未验证前不要写进 README。
+**预期提升**：mIoU +3~5 个百分点；`mean` 融合尚未达到该预期，LSS 是否达标需要真实数据消融验证。
+**风险**：LSS 训练不稳定，先固定 backbone 只训 depth head；LSS 未验证前不要写进 README。若 16x16 BEV 分辨率不足，优先提高 BEV 分辨率再下结论。
 ### 2.2 时间建模增强
 
 **现状**：`ConvBEVEncoder` 把过去 3 帧特征做均值池化，丢失时序信息；`OccWorld` 也只是把 ego token 拼进序列，不是真正时序演化。

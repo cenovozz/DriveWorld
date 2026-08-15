@@ -132,14 +132,18 @@ class OccWorld(nn.Module):
         past_ego_pose: torch.Tensor,
         future_ego_pose: torch.Tensor,
         future_occupancy: Optional[torch.Tensor] = None,
+        past_intrinsics: Optional[torch.Tensor] = None,
+        past_extrinsics: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """Forward pass.
 
         Args:
-            past_images: (B, T_past, 3, H, W)
+            past_images: (B, T_past, C, H, W) or (B, T_past, N, C, H, W)
             past_ego_pose: (B, T_past, 3)
             future_ego_pose: (B, T_future, 3)
             future_occupancy: optional, unused in this forward
+            past_intrinsics: optional (B, T_past, N, 3, 3)
+            past_extrinsics: optional (B, T_past, N, 4, 4)
 
         Returns:
             Dict with occupancy_pred: (B, T_future, 2, Z, H, W)
@@ -147,7 +151,9 @@ class OccWorld(nn.Module):
         B, T_past = past_images.shape[:2]
         T_future = future_ego_pose.shape[1]
 
-        bev_feat = self.encoder(past_images, past_ego_pose)
+        bev_feat = self.encoder(
+            past_images, past_ego_pose, past_intrinsics, past_extrinsics
+        )
         B, C_bev, H_bev, W_bev = bev_feat.shape
         num_tokens = H_bev * W_bev
 
@@ -190,10 +196,18 @@ class OccWorld(nn.Module):
         past_images: torch.Tensor,
         past_ego_pose: torch.Tensor,
         future_ego_pose: torch.Tensor,
+        past_intrinsics: Optional[torch.Tensor] = None,
+        past_extrinsics: Optional[torch.Tensor] = None,
         temperature: float = 1.0,
     ) -> torch.Tensor:
         """Generation mode for inference."""
         self.eval()
         with torch.no_grad():
-            output = self.forward(past_images, past_ego_pose, future_ego_pose)
+            output = self.forward(
+                past_images,
+                past_ego_pose,
+                future_ego_pose,
+                past_intrinsics=past_intrinsics,
+                past_extrinsics=past_extrinsics,
+            )
         return output["occupancy_pred"]
