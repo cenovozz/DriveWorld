@@ -185,7 +185,7 @@ python scripts/train.py --config configs/diffusion.yaml
 
 ### 2.0 实验管理（先做，否则后期会乱）
 
-> 状态：代码已落地；尚未在真实 nuScenes 上执行正式训练。
+> 状态：代码已落地；多相机 OccWorld 已在 AutoDL 完成 100 epochs 训练，baseline 指标待补。
 
 - [x] 固定随机种子：`training.seed=42`，`set_seed()` 已设置 Python/NumPy/PyTorch 种子。
 - [x] DataLoader worker seed 可控：`create_dataloader(seed=...)` 已设置 `generator` 与 `worker_init_fn`。
@@ -242,8 +242,22 @@ Get-ChildItem outputs/experiments/occworld_baseline_tpast3_20260815
 - 当前 `BEVEncoder._splat` 只是 bilinear 近似，多相机 LSS 尚未接入。
 - 兼容性规则：`num_cameras=1` 走原单相机路径，旧 checkpoint 不受影响。
 
-**预期提升**：mIoU +3~5 个百分点。
-**风险**：LSS 训练不稳定，先固定 backbone 只训 depth head；真实数据未验证前不要写进 README。
+**实测结果（AutoDL, 2026-08-15）**
+
+| 指标 | 数值 |
+|------|------|
+| 实验 | `occworld_multicam_tpast3_20260815` |
+| 配置 | 6 cameras, ConvBEV mean fusion, batch size 2, seed 42 |
+| 训练 | 100 epochs |
+| `train/loss_epoch` last | 0.389 |
+| `val/loss` last | 0.408 |
+| `val/mIoU` last | 0.561 |
+| `val/mIoU` best | 0.563 |
+
+说明：单相机 baseline 的 TensorBoard event 文件为空，尚未形成有效对比；需要重新跑 baseline 后再补消融表。
+
+**预期提升**：mIoU +3~5 个百分点（待 baseline 补齐后验证）。
+**风险**：LSS 训练不稳定，先固定 backbone 只训 depth head；LSS 未验证前不要写进 README。
 ### 2.2 时间建模增强
 
 **现状**：`ConvBEVEncoder` 把过去 3 帧特征做均值池化，丢失时序信息；`OccWorld` 也只是把 ego token 拼进序列，不是真正时序演化。

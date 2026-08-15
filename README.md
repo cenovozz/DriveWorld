@@ -213,12 +213,37 @@ python scripts/eval.py --checkpoint checkpoints/diffusion/best.pt \
   --config configs/diffusion.yaml --output-dir outputs/eval_diffusion
 ```
 
+### Stage 2 Multi-camera OccWorld (nuScenes mini)
+
+Results from the tracked run `occworld_multicam_tpast3_20260815` on AutoDL.
+
+| Setting | Value |
+|--------|-------|
+| **Model** | OccWorld + 6-camera shared ConvBEV encoder (`mean` fusion) |
+| **Dataset** | nuScenes mini: 110 train / 99 val scenes |
+| **Task** | 3 past frames + ego pose -> 6 future occupancy frames |
+| **Training** | 1x GPU, 100 epochs, batch size 2, seed 42 |
+| **Loss** | Focal + Dice + temporal weighting |
+| **train/loss_epoch** | 0.389 (epoch 99) |
+| **last val/loss** | 0.408 |
+| **last val/mIoU** | 0.561 |
+| **best val/mIoU** | 0.563 |
+
+Reproduce:
+
+```bash
+python scripts/run_experiment.py \
+  --config configs/multicam_occworld.yaml \
+  --name occworld_multicam_tpast3_20260815 \
+  --seed 42 --eval
+```
+
 ---
 
 ## Roadmap
 
 - [ ] Full nuScenes trainval preprocessing
-- [ ] Multi-camera support (current: front camera only)
+- [x] Multi-camera support (6-camera ConvBEV mean fusion)
 - [ ] Add classifier-free guidance for DriveDiffuser
 - [ ] Hybrid OccWorld + Diffusion model
 - [ ] Closed-loop evaluation in CARLA
