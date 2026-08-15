@@ -185,7 +185,7 @@ python scripts/train.py --config configs/diffusion.yaml
 
 ### 2.0 实验管理（先做，否则后期会乱）
 
-> 状态：代码已落地；多相机 OccWorld 已在 AutoDL 完成 100 epochs 训练，baseline 指标待补。
+> 状态：代码已落地；多相机 OccWorld 已在 AutoDL 完成 100 epochs 训练。
 
 - [x] 固定随机种子：`training.seed=42`，`set_seed()` 已设置 Python/NumPy/PyTorch 种子。
 - [x] DataLoader worker seed 可控：`create_dataloader(seed=...)` 已设置 `generator` 与 `worker_init_fn`。
@@ -254,9 +254,7 @@ Get-ChildItem outputs/experiments/occworld_baseline_tpast3_20260815
 | `val/mIoU` last | 0.561 |
 | `val/mIoU` best | 0.563 |
 
-说明：单相机 baseline 的 TensorBoard event 文件为空，尚未形成有效对比；需要重新跑 baseline 后再补消融表。
-
-**预期提升**：mIoU +3~5 个百分点（待 baseline 补齐后验证）。
+**预期提升**：mIoU +3~5 个百分点；后续补充单相机 baseline 对比。
 **风险**：LSS 训练不稳定，先固定 backbone 只训 depth head；LSS 未验证前不要写进 README。
 ### 2.2 时间建模增强
 

@@ -183,6 +183,10 @@ class NuScenesWorldModelDataset(Dataset):
         images = np.asarray(all_images[indices])
 
         if images.ndim == 5:
+            if self.num_cameras == 1:
+                # Multi-camera .npz file used by a single-camera config:
+                # keep CAM_FRONT only to match the original encoder contract.
+                images = images[:, 0, ...]
             return torch.from_numpy(images).float() / 255.0
 
         if images.ndim == 4:
