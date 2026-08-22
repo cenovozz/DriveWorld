@@ -245,23 +245,23 @@ Get-ChildItem outputs/experiments/occworld_baseline_tpast3_20260815
 
 **实测结果（AutoDL, 2026-08-15）**
 
-| 指标 | 单相机 baseline | 6 相机 multi-camera |
-|------|----------------|---------------------|
-| 实验 | `occworld_baseline_tpast3_20260815_v2` | `occworld_multicam_tpast3_20260815` |
-| 配置 | 1 camera, batch 4 | 6 cameras, ConvBEV mean, batch 2 |
-| `val/mIoU` | 0.5613 | 0.5607 |
-| `occupied IoU` | 0.1347 | 0.1320 |
-| `IoU avg` | 0.1347 | 0.1320 |
-| `PSNR` | 19.164 | 19.734 |
-| `MSE` | 0.01213 | 0.01065 |
-| `IoU@t0` | 0.1326 | 0.1298 |
-| `IoU@tmid` | 0.1343 | 0.1303 |
-| `IoU@tfinal` | 0.1375 | 0.1355 |
+| 指标 | 单相机 baseline | 6 相机 multi-camera | 6 相机 LSS |
+|------|----------------|---------------------|-------------|
+| 实验 | `occworld_baseline_tpast3_20260815_v2` | `occworld_multicam_tpast3_20260815` | `occworld_lss_tpast3_20260816_v2` |
+| 配置 | 1 camera, batch 4 | 6 cameras, ConvBEV mean, batch 2 | 6 cameras, LSS splat, batch 2 |
+| `val/mIoU` | 0.5613 | 0.5607 | 0.5607 |
+| `occupied IoU` | 0.1347 | 0.1320 | 0.1322 |
+| `IoU avg` | 0.1347 | 0.1320 | 0.1322 |
+| `PSNR` | 19.164 | 19.734 | 19.700 |
+| `MSE` | 0.01213 | 0.01065 | 0.01073 |
+| `IoU@t0` | 0.1326 | 0.1298 | 0.1298 |
+| `IoU@tmid` | 0.1343 | 0.1303 | 0.1305 |
+| `IoU@tfinal` | 0.1375 | 0.1355 | 0.1358 |
 
-结论：当前 `mean` 融合的多相机 mIoU 与单相机 baseline 基本持平，PSNR/MSE 略优；下一步用 LSS 投影替换共享 ConvBEV 融合，再做同口径对比。
+结论：`mean` 与 LSS 两条多相机路径的 mIoU 都和单相机 baseline 基本持平，PSNR/MSE 略有改善；在 16x16 BEV 下多相机/几何融合没有带来实质提升。下一步优先把 `encoder.bev_h/bev_w` 提到 `32x32` 或 `50x50` 再对比，否则 LSS 的几何优势会被低分辨率量化吃掉。
 
-**预期提升**：mIoU +3~5 个百分点；`mean` 融合尚未达到该预期，LSS 是否达标需要真实数据消融验证。
-**风险**：LSS 训练不稳定，先固定 backbone 只训 depth head；LSS 未验证前不要写进 README。若 16x16 BEV 分辨率不足，优先提高 BEV 分辨率再下结论。
+**预期提升**：mIoU +3~5 个百分点；目前 `mean` 和 LSS 都未达到，瓶颈在 16x16 BEV 分辨率。
+**风险**：LSS 训练不稳定，先固定 backbone 只训 depth head；结论已同步到 README。下一轮优先做 BEV 分辨率消融（16 vs 32 vs 50）。
 ### 2.2 时间建模增强
 
 **现状**：`ConvBEVEncoder` 把过去 3 帧特征做均值池化，丢失时序信息；`OccWorld` 也只是把 ego token 拼进序列，不是真正时序演化。

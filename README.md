@@ -218,27 +218,28 @@ python scripts/eval.py --checkpoint checkpoints/diffusion/best.pt \
 
 Tracked on AutoDL, 100 epochs, seed 42. Both runs use Focal + Dice + temporal weighting.
 
-| Setting | Single-camera baseline | 6-camera multi-camera |
-|--------|-------|-------|
-| **Experiment** | `occworld_baseline_tpast3_20260815_v2` | `occworld_multicam_tpast3_20260815` |
-| **Input** | `CAM_FRONT` only | 6 cameras, ConvBEV `mean` fusion |
-| **Batch size** | 4 | 2 |
-| **val/mIoU** | 0.5613 | 0.5607 |
-| **occupied IoU** | 0.1347 | 0.1320 |
-| **IoU avg** | 0.1347 | 0.1320 |
-| **PSNR** | 19.164 | 19.734 |
-| **MSE** | 0.01213 | 0.01065 |
-| **IoU@t0** | 0.1326 | 0.1298 |
-| **IoU@tmid** | 0.1343 | 0.1303 |
-| **IoU@tfinal** | 0.1375 | 0.1355 |
+| Setting | Single-camera baseline | 6-camera multi-camera | 6-camera LSS |
+|--------|-------|-------|-------|
+| **Experiment** | `occworld_baseline_tpast3_20260815_v2` | `occworld_multicam_tpast3_20260815` | `occworld_lss_tpast3_20260816_v2` |
+| **Input** | `CAM_FRONT` only | 6 cameras, ConvBEV `mean` fusion | 6 cameras, LSS splat fusion |
+| **Batch size** | 4 | 2 | 2 |
+| **val/mIoU** | 0.5613 | 0.5607 | 0.5607 |
+| **occupied IoU** | 0.1347 | 0.1320 | 0.1322 |
+| **IoU avg** | 0.1347 | 0.1320 | 0.1322 |
+| **PSNR** | 19.164 | 19.734 | 19.700 |
+| **MSE** | 0.01213 | 0.01065 | 0.01073 |
+| **IoU@t0** | 0.1326 | 0.1298 | 0.1298 |
+| **IoU@tmid** | 0.1343 | 0.1303 | 0.1305 |
+| **IoU@tfinal** | 0.1375 | 0.1355 | 0.1358 |
 
-The current `mean` fusion reaches comparable mIoU to the single-camera baseline and improves PSNR/MSE. The LSS projection path (`configs/lss_occworld.yaml`) is implemented as the next upgrade but has not yet been validated.
+Both `mean` and LSS multi-camera paths reach comparable mIoU to the single-camera baseline and slightly improve PSNR/MSE, but neither brings a meaningful mIoU gain at the current 16x16 BEV resolution. The likely bottleneck is the heavily quantized BEV; the next experiment should raise `encoder.bev_h/bev_w` (e.g. 32x32) before drawing conclusions about LSS.
 
 Reproduce:
 
 ```bash
 python scripts/run_experiment.py --config configs/occworld.yaml --name occworld_baseline_tpast3_20260815_v2 --seed 42 --eval
 python scripts/run_experiment.py --config configs/multicam_occworld.yaml --name occworld_multicam_tpast3_20260815 --seed 42 --eval
+python scripts/run_experiment.py --config configs/lss_occworld.yaml --name occworld_lss_tpast3_20260816_v2 --seed 42 --eval
 ```
 
 ---
