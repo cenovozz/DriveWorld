@@ -318,27 +318,32 @@ class WorldModelTrainer:
         ckpt_dir = Path(self.config.training.checkpoint_dir)
         ckpt_dir.mkdir(parents=True, exist_ok=True)
         path = ckpt_dir / f"{name}.pt"
-        torch.save(
-            {
-                "epoch": self.current_epoch,
-                "global_step": self.global_step,
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "scheduler_state_dict": self.scheduler.state_dict(),
-                "scaler_state_dict": self.scaler.state_dict(),
-                "best_val_loss": self.best_val_loss,
-                "config": self.config,
-            },
-            path,
-        )
+
+        # Optimizer/scheduler/scaler state is only needed for full resume.
+        # Periodic epoch checkpoints keep the model weights only, which avoids
+        # filling the data disk with multi-hundred-MB optimizer snapshots.
+        payload = {
+            "epoch": self.current_epoch,
+            "global_step": self.global_step,
+            "model_state_dict": self.model.state_dict(),
+            "best_val_loss": self.best_val_loss,
+            "config": self.config,
+        }
+        if name in ("best", "final"):
+            payload["optimizer_state_dict"] = self.optimizer.state_dict()
+            payload["scheduler_state_dict"] = self.scheduler.state_dict()
+            payload["scaler_state_dict"] = self.scaler.state_dict()
+
+        torch.save(payload, path)
         self.logger.info(f"Checkpoint saved: {path}")
 
     def load_checkpoint(self, path: str) -> None:
         ckpt = torch.load(path, map_location=self.device)
         self.model.load_state_dict(ckpt["model_state_dict"])
-        self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
-        self.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
-        self.scaler.load_state_dict(ckpt["scaler_state_dict"])
+        if "optimizer_state_dict" in ckpt:
+            self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+            self.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+            self.scaler.load_state_dict(ckpt["scaler_state_dict"])
         self.current_epoch = ckpt["epoch"] + 1
         self.global_step = ckpt["global_step"]
         self.best_val_loss = ckpt["best_val_loss"]
