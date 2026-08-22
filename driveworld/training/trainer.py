@@ -140,6 +140,7 @@ class WorldModelTrainer:
             bev_grid_size=cfg.bev_grid_size,
             bev_resolution=cfg.bev_resolution,
             num_cameras=cfg.num_cameras,
+            occupancy_target=getattr(cfg, "occupancy_target", "future"),
         )
 
         train_ds = NuScenesWorldModelDataset(split="train", augment=True, **common)

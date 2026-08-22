@@ -58,6 +58,8 @@ def main():
         image_size=config.data.image_size,
         bev_grid_size=config.data.bev_grid_size,
         bev_resolution=config.data.bev_resolution,
+        num_cameras=config.data.num_cameras,
+        occupancy_target=getattr(config.data, "occupancy_target", "future"),
     )
     val_ds = NuScenesWorldModelDataset(split="val", augment=False, **common)
     val_loader = create_dataloader(

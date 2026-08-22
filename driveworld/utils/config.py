@@ -21,6 +21,7 @@ class DataConfig:
     num_cameras: int = 1
     num_past_frames: int = 3
     num_future_frames: int = 6
+    occupancy_target: str = "future"  # future | last_past_repeat
     frame_interval: float = 0.5
     batch_size: int = 4
     num_workers: int = 4

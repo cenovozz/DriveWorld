@@ -45,6 +45,7 @@ class NuScenesWorldModelDataset(Dataset):
         num_z: int = 16,
         z_range: Tuple[float, float] = (-4.0, 4.0),
         augment: bool = True,
+        occupancy_target: str = "future",
     ):
         self.root = Path(root)
         self.version = version
@@ -59,6 +60,7 @@ class NuScenesWorldModelDataset(Dataset):
         self.num_z = num_z
         self.z_range = z_range
         self.augment = augment
+        self.occupancy_target = occupancy_target
 
         self.sequence_length = num_past_frames + num_future_frames
 
@@ -167,7 +169,14 @@ class NuScenesWorldModelDataset(Dataset):
         )
 
         if all_occupancy is not None:
-            future_occ = torch.from_numpy(all_occupancy[future_indices]).long()
+            if self.occupancy_target == "last_past_repeat":
+                anchor = all_occupancy[past_indices[-1]]
+                future_occ = np.broadcast_to(
+                    anchor, (self.num_future_frames, *anchor.shape)
+                ).copy()
+                future_occ = torch.from_numpy(future_occ).long()
+            else:
+                future_occ = torch.from_numpy(all_occupancy[future_indices]).long()
         else:
             future_occ = self._generate_dummy_occupancy()
 

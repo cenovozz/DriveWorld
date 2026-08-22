@@ -60,6 +60,8 @@ def main():
         image_size=config.data.image_size,
         bev_grid_size=config.data.bev_grid_size,
         bev_resolution=config.data.bev_resolution,
+        num_cameras=config.data.num_cameras,
+        occupancy_target=getattr(config.data, "occupancy_target", "future"),
     )
     val_ds = NuScenesWorldModelDataset(split="val", augment=False, **common)
 
@@ -70,13 +72,28 @@ def main():
         past_ego = sample["past_ego_pose"].unsqueeze(0).to(device)
         future_ego = sample["future_ego_pose"].unsqueeze(0).to(device)
         future_occ_gt = sample["future_occupancy"].numpy()
+        past_intrinsics = sample["past_intrinsics"].unsqueeze(0).to(device)
+        past_extrinsics = sample["past_extrinsics"].unsqueeze(0).to(device)
 
         with torch.no_grad():
             if config.training.paradigm == "occworld":
-                output = model(past_images, past_ego, future_ego)
+                output = model(
+                    past_images,
+                    past_ego,
+                    future_ego,
+                    past_intrinsics=past_intrinsics,
+                    past_extrinsics=past_extrinsics,
+                )
                 pred = output["occupancy_pred"].argmax(dim=2)[0].cpu().numpy()
             else:
-                pred = model.sample(past_images, past_ego, future_ego, num_inference_steps=50)
+                pred = model.sample(
+                    past_images,
+                    past_ego,
+                    future_ego,
+                    num_inference_steps=50,
+                    past_intrinsics=past_intrinsics,
+                    past_extrinsics=past_extrinsics,
+                )
                 pred = (pred[0] > 0.5).cpu().numpy()
 
         visualize_occupancy_comparison(
