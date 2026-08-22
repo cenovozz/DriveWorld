@@ -154,12 +154,13 @@ class WorldModelLoss(nn.Module):
 
         Args:
             model_output: Model forward output dict
-            batch: (past_images, past_ego, future_occ, future_ego, tokens)
+            batch: (past_images, past_ego, future_occ, future_ego,
+                   past_intrinsics, past_extrinsics, tokens)
 
         Returns:
             Dict with "total" loss and component losses
         """
-        _, _, future_occupancy, _, _ = batch
+        future_occupancy = batch[2]
 
         losses = {}
 

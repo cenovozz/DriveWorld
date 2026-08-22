@@ -273,6 +273,12 @@ class BEVEncoder(nn.Module):
         )
 
         weighted_feats = context_flat * weights.unsqueeze(0)
+        # Under AMP, conv outputs are fp16 while softmax(depth logits) is
+        # computed in fp32. Cast both sides to the BEV accumulator dtype so
+        # index_add_ never mixes Half and Float tensors.
+        weighted_feats = weighted_feats.to(bev_feat.dtype)
+        weights = weights.to(bev_weight.dtype)
+
         bev_flat = bev_feat.view(self.bev_feat_dim, -1)
         bev_flat.index_add_(1, idx, weighted_feats)
         bev_weight.view(-1).index_add_(0, idx, weights)
