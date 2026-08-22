@@ -245,23 +245,23 @@ Get-ChildItem outputs/experiments/occworld_baseline_tpast3_20260815
 
 **实测结果（AutoDL, 2026-08-15）**
 
-| 指标 | 单相机 baseline | 6 相机 multi-camera | 6 相机 LSS |
-|------|----------------|---------------------|-------------|
-| 实验 | `occworld_baseline_tpast3_20260815_v2` | `occworld_multicam_tpast3_20260815` | `occworld_lss_tpast3_20260816_v2` |
-| 配置 | 1 camera, batch 4 | 6 cameras, ConvBEV mean, batch 2 | 6 cameras, LSS splat, batch 2 |
-| `val/mIoU` | 0.5613 | 0.5607 | 0.5607 |
-| `occupied IoU` | 0.1347 | 0.1320 | 0.1322 |
-| `IoU avg` | 0.1347 | 0.1320 | 0.1322 |
-| `PSNR` | 19.164 | 19.734 | 19.700 |
-| `MSE` | 0.01213 | 0.01065 | 0.01073 |
-| `IoU@t0` | 0.1326 | 0.1298 | 0.1298 |
-| `IoU@tmid` | 0.1343 | 0.1303 | 0.1305 |
-| `IoU@tfinal` | 0.1375 | 0.1355 | 0.1358 |
+| 指标 | 单相机 baseline | 6 相机 multi-camera | 6 相机 LSS | 6 相机 LSS (32x32 BEV) |
+|------|----------------|---------------------|-------------|------------------------|
+| 实验 | `occworld_baseline_tpast3_20260815_v2` | `occworld_multicam_tpast3_20260815` | `occworld_lss_tpast3_20260816_v2` | `occworld_lss_bev32_20260822` |
+| 配置 | 1 camera, batch 4 | 6 cameras, ConvBEV mean, batch 2 | 6 cameras, LSS splat, batch 2 | 6 cameras, LSS splat, 32x32 BEV, batch 1 |
+| `val/mIoU` | 0.5613 | 0.5607 | 0.5607 | 0.5608 |
+| `occupied IoU` | 0.1347 | 0.1320 | 0.1322 | 0.1324 |
+| `IoU avg` | 0.1347 | 0.1320 | 0.1322 | 0.1324 |
+| `PSNR` | 19.164 | 19.734 | 19.700 | 19.710 |
+| `MSE` | 0.01213 | 0.01065 | 0.01073 | 0.010709 |
+| `IoU@t0` | 0.1326 | 0.1298 | 0.1298 | 0.1299 |
+| `IoU@tmid` | 0.1343 | 0.1303 | 0.1305 | 0.1307 |
+| `IoU@tfinal` | 0.1375 | 0.1355 | 0.1358 | 0.1357 |
 
-结论：`mean` 与 LSS 两条多相机路径的 mIoU 都和单相机 baseline 基本持平，PSNR/MSE 略有改善；在 16x16 BEV 下多相机/几何融合没有带来实质提升。下一步优先把 `encoder.bev_h/bev_w` 提到 `32x32` 或 `50x50` 再对比，否则 LSS 的几何优势会被低分辨率量化吃掉。
+结论：`mean`、LSS 16x16、LSS 32x32 三条多相机路径的 mIoU 都和单相机 baseline 基本持平，PSNR/MSE 略有改善；把 BEV 从 16x16 提到 32x32 也没有改变 occupied IoU，说明瓶颈不只是 BEV 量化。真正该看的是 `occupied IoU`（约 0.13），下一步要排查标签稀疏/类别不平衡，以及 depth head 是否学到了有效几何。
 
-**预期提升**：mIoU +3~5 个百分点；目前 `mean` 和 LSS 都未达到，瓶颈在 16x16 BEV 分辨率。
-**风险**：LSS 训练不稳定，先固定 backbone 只训 depth head；结论已同步到 README。下一轮优先做 BEV 分辨率消融（16 vs 32 vs 50）。
+**预期提升**：mIoU +3~5 个百分点；目前所有路径都未达到，且提高 BEV 分辨率已排除单纯量化瓶颈。
+**风险**：LSS 训练不稳定，先固定 backbone 只训 depth head；结论已同步到 README。下一轮做标签/损失诊断：统计 occupied 体素占比、对比 focal alpha/gamma、可视化 depth map 与 BEV 特征。
 ### 2.2 时间建模增强
 
 **现状**：`ConvBEVEncoder` 把过去 3 帧特征做均值池化，丢失时序信息；`OccWorld` 也只是把 ego token 拼进序列，不是真正时序演化。
