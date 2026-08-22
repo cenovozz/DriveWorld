@@ -201,6 +201,12 @@ class BEVEncoder(nn.Module):
                         W_img,
                     )
 
+        # Normalize in fp32: the 1e-8 epsilon underflows to zero in fp16,
+        # which turns empty BEV cells into 0/0 -> NaN. Casting the buffers up
+        # keeps the normalization stable and leaves bev_compressor under AMP
+        # control for the following conv/BN.
+        bev_feat = bev_feat.float()
+        bev_weight = bev_weight.float()
         bev_feat = bev_feat / (bev_weight + 1e-8)
         return self.bev_compressor(bev_feat)
 
